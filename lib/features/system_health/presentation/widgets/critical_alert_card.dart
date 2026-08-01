@@ -1,6 +1,6 @@
 // lib/features/system_health/presentation/widgets/critical_alert_card.dart
 import 'package:flutter/material.dart';
-import 'package:lucide_icons/lucide_icons.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../../../../core/widgets/glass_panel.dart';
 import '../../domain/entities/system_health_state.dart';
 

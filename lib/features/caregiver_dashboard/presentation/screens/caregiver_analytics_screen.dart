@@ -1,7 +1,7 @@
 // lib/features/caregiver_dashboard/presentation/screens/caregiver_analytics_screen.dart
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:lucide_icons/lucide_icons.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../../../adherence_analytics/presentation/screens/adherence_analytics_screen.dart';
 import '../widgets/link_patient_dialog.dart';

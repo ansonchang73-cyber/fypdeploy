@@ -5,7 +5,7 @@
 // using this widget. Relocated and import fixed, not wired in (that
 // would be a feature change, not a decoupling one).
 import 'package:flutter/material.dart';
-import 'package:lucide_icons/lucide_icons.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../../../../core/widgets/glass_panel.dart';
 import '../../domain/entities/medication_task.dart';
 

@@ -1,6 +1,6 @@
 // lib/features/profile/presentation/widgets/member_list_tile.dart
 import 'package:flutter/material.dart';
-import 'package:lucide_icons/lucide_icons.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../../../../core/widgets/glass_panel.dart';
 import '../../domain/entities/care_member.dart';
 
