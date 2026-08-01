@@ -1,0 +1,39 @@
+name: fyp_app
+description: A new Flutter project.
+
+environment: 
+  sdk: '^3.10.0'
+
+dependencies:
+  go_router: ^14.0.0
+  flutter:
+    sdk: flutter
+
+  pdf: ^3.10.4
+  printing: ^5.11.0
+  path_provider: ^2.1.2
+  # State Management
+  flutter_riverpod: ^2.4.3      # Robust, scalable state management
+  # UI & Styling
+  google_fonts: ^8.1.0          # For the clean, modern typography (e.g., Inter or Poppins)
+  fl_chart: ^0.65.0             # Essential for the Adherence rings and Vitals bar charts
+  # Utilities
+  intl: ^0.18.1                 # For formatting dates and times
+  firebase_core: ^4.11.0
+  cloud_firestore: ^6.6.0
+  firebase_auth: ^6.5.4
+  image_picker: ^1.2.3
+  firebase_storage: ^13.4.3
+  crop_your_image: ^2.0.0
+  lucide_icons: ^0.257.0
+  url_launcher: ^6.3.2
+  
+  # Maps
+  flutter_map: ^7.0.0
+  latlong2: ^0.9.0
+
+dev_dependencies:
+  flutter_lints: ^6.0.0
+
+flutter:
+  uses-material-design: true
