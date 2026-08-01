@@ -14,6 +14,9 @@ flutter --version
 echo "==> Enabling web support..."
 flutter config --enable-web --no-analytics
 
+echo "==> Ensuring web platform is configured..."
+flutter create . --platforms web
+
 echo "==> Fetching packages..."
 flutter pub get
 
