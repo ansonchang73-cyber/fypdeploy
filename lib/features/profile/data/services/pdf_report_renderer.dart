@@ -1,14 +1,18 @@
 // lib/features/profile/data/services/pdf_report_renderer.dart
-import 'dart:io';
 import 'dart:typed_data';
-import 'package:flutter/foundation.dart';
 import 'package:intl/intl.dart';
-import 'package:path_provider/path_provider.dart';
 
 // PDF Imports
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
+
+// Conditional import: picks the right save strategy at compile time.
+// Web targets get pdf_saver_web.dart (no dart:io), everything else
+// gets pdf_saver_native.dart (dart:io + path_provider).
+import 'pdf_saver_stub.dart'
+    if (dart.library.io) 'pdf_saver_native.dart'
+    if (dart.library.html) 'pdf_saver_web.dart';
 
 import '../../domain/entities/adherence_report.dart';
 import '../../domain/entities/appointment.dart';
@@ -33,39 +37,6 @@ class PdfSaveResult {
 /// which used to also run the Firestore query and the percentage
 /// calculations in the same class. The drawing code below is unchanged.
 class PdfReportRenderer {
-  /// Safely handles saving across Web, Android, iOS, and Desktop
-  Future<PdfSaveResult> _forceSaveToDownloads(pw.Document pdf, String fileName) async {
-    final bytes = await pdf.save();
-
-    if (kIsWeb) {
-      await Printing.sharePdf(bytes: bytes, filename: fileName);
-      return PdfSaveResult(path: "Browser Downloads folder", bytes: bytes);
-    }
-
-    try {
-      Directory? dir;
-      if (Platform.isAndroid) {
-        dir = Directory('/storage/emulated/0/Download');
-        if (!await dir.exists()) dir = await getExternalStorageDirectory();
-      } else if (Platform.isIOS) {
-        dir = await getApplicationDocumentsDirectory();
-      } else {
-        dir = await getDownloadsDirectory();
-      }
-
-      if (dir != null) {
-        final file = File('${dir.path}/$fileName');
-        await file.writeAsBytes(bytes);
-        return PdfSaveResult(path: file.path, bytes: bytes);
-      } else {
-        await Printing.sharePdf(bytes: bytes, filename: fileName);
-        return PdfSaveResult(path: "Shared via OS", bytes: bytes);
-      }
-    } catch (e) {
-      await Printing.sharePdf(bytes: bytes, filename: fileName);
-      return PdfSaveResult(path: "Shared via OS Fallback", bytes: bytes);
-    }
-  }
 
   /// Draws the monthly adherence PDF from an already-built [AdherenceReportData].
   Future<PdfSaveResult> renderAdherenceReport(AdherenceReportData report) async {
@@ -243,7 +214,7 @@ class PdfReportRenderer {
 
     final safeFilename =
         '${report.reportLabel.replaceAll(RegExp(r'[^a-zA-Z0-9]'), '_')}.pdf';
-    return _forceSaveToDownloads(pdf, safeFilename);
+    return savePdfToDownloads(pdf, safeFilename);
   }
 
   /// "Your medications, at these times" — shown above the detailed dose
@@ -485,7 +456,7 @@ class PdfReportRenderer {
       ),
     );
 
-    final result = await _forceSaveToDownloads(pdf, fileName);
+    final result = await savePdfToDownloads(pdf, fileName);
     return result.path;
   }
 }
