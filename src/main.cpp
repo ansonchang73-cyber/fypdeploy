@@ -1,0 +1,169 @@
+#include <WiFiClientSecure.h>
+#include <Arduino.h>
+#include <WiFi.h>
+#include <HTTPClient.h>
+#include <ArduinoJson.h>
+#include <Wire.h>
+#include <Adafruit_GFX.h>
+#include <Adafruit_SSD1306.h>
+
+#define SCREEN_WIDTH 128
+#define SCREEN_HEIGHT 64
+Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, -1);
+
+const char* ssid = "Wokwi-GUEST"; 
+const char* password = "";
+
+const int LID_SWITCH_PIN = 14; 
+const int ALARM_LED_PIN = 12;
+
+const String projectId = "synchrom-6ec50";
+const String userId = "zoHqSaXjCwSXiIJBgkDhBF4SNUE3"; 
+const String userDocUrl = "https://firestore.googleapis.com/v1/projects/" + projectId + "/databases/(default)/documents/users/" + userId;
+
+String currentMedName = "";
+String currentDosage = "";
+unsigned long lastCheckTime = 0;
+const unsigned long checkInterval = 2000; 
+
+bool boxIsUnlocked = false;
+bool hasFiredThisCycle = false; 
+
+void updateScreenStatus(String line1, String line2, uint16_t color = SSD1306_WHITE) {
+  display.clearDisplay();
+  display.setTextColor(color);
+  display.setTextSize(1);
+  display.setCursor(0, 10);
+  display.println(line1);
+  display.setCursor(0, 30);
+  display.println(line2);
+  display.display();
+}
+
+bool checkAvailability() {
+  if (WiFi.status() != WL_CONNECTED) return false;
+
+  String activeTaskId = "";
+
+  // 🛰️ BLOCK 1: User Profile Fetch
+  {
+    WiFiClientSecure client1;
+    client1.setInsecure();
+    HTTPClient http1;
+    http1.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
+    http1.useHTTP10(true); 
+    http1.setTimeout(8000);
+    http1.begin(client1, userDocUrl);
+    http1.addHeader("User-Agent", "ESP32-SynchroM/1.0"); 
+    http1.addHeader("Accept", "application/json");
+    
+    int httpCode = http1.GET();
+    if (httpCode > 0) {
+      if (httpCode == HTTP_CODE_OK) {
+        JsonDocument doc; 
+        deserializeJson(doc, http1.getStream());
+        activeTaskId = doc["fields"]["active_task_id"]["stringValue"].as<String>();
+        activeTaskId.trim();
+      }
+    } else {
+      Serial.printf("Block 1 Error: %s\n", http1.errorToString(httpCode).c_str());
+      updateScreenStatus("CONN ERROR", http1.errorToString(httpCode));
+    }
+    http1.end(); 
+  } 
+
+  // ✅ FIX: Visually inform the user when the schedule is empty
+  if (activeTaskId == "" || activeTaskId == "null" || activeTaskId == "EMPTY") {
+    updateScreenStatus("SCHEDULE CLEAR", "Box Secured");
+    return false;
+  }
+
+  // 🛰️ BLOCK 2: Schedule Details Fetch
+  String scheduleUrl = "https://firestore.googleapis.com/v1/projects/" + projectId + "/databases/(default)/documents/medication_schedules/" + activeTaskId;
+  {
+    WiFiClientSecure client2;
+    client2.setInsecure();
+    HTTPClient http2;
+    http2.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
+    http2.useHTTP10(true); 
+    http2.setTimeout(8000);
+    http2.begin(client2, scheduleUrl);
+    http2.addHeader("User-Agent", "ESP32-SynchroM/1.0");
+    http2.addHeader("Accept", "application/json");
+
+    int scheduleHttpCode = http2.GET();
+    if (scheduleHttpCode == HTTP_CODE_OK) {
+      JsonDocument scheduleDoc;
+      deserializeJson(scheduleDoc, http2.getStream());
+      currentMedName = scheduleDoc["fields"]["medicationName"]["stringValue"].as<String>();
+      currentDosage = scheduleDoc["fields"]["dosage"]["stringValue"].as<String>();
+      updateScreenStatus("TAKE: " + currentMedName, currentDosage);
+      http2.end();
+      return true;
+    } else {
+      updateScreenStatus("SCHED ERR", "Code: " + String(scheduleHttpCode));
+    }
+    http2.end(); 
+  } 
+  return false;
+}
+
+void setup() {
+  Serial.begin(115200);
+  pinMode(LID_SWITCH_PIN, INPUT_PULLUP);
+  pinMode(ALARM_LED_PIN, OUTPUT);
+
+  if(!display.begin(SSD1306_SWITCHCAPVCC, 0x3C)) Serial.println("SSD1306 fail");
+  
+  updateScreenStatus("SYSTEM BOOTING...", "Connecting Wi-Fi");
+  WiFi.begin(ssid, password);
+  
+  unsigned long startAttempt = millis();
+  while (WiFi.status() != WL_CONNECTED && millis() - startAttempt < 15000) delay(500);
+
+  if (WiFi.status() == WL_CONNECTED) {
+    configTime(0, 0, "pool.ntp.org");
+    updateScreenStatus("SYNCHROM V1.0", "System Ready");
+  } else {
+    updateScreenStatus("NO WI-FI", "Check Settings");
+  }
+}
+
+void loop() {
+  unsigned long currentMillis = millis();
+  if (currentMillis - lastCheckTime >= checkInterval) {
+    lastCheckTime = currentMillis;
+    boxIsUnlocked = checkAvailability();
+    digitalWrite(ALARM_LED_PIN, boxIsUnlocked ? LOW : HIGH);
+  }
+
+  int currentLidState = digitalRead(LID_SWITCH_PIN); 
+  if (currentLidState == LOW) hasFiredThisCycle = false;
+
+  if (currentLidState == HIGH && !hasFiredThisCycle) {
+    delay(50); 
+    if (digitalRead(LID_SWITCH_PIN) != HIGH || !boxIsUnlocked) return;
+    
+    hasFiredThisCycle = true; 
+    updateScreenStatus("PROCESSING...", "Syncing...");
+    
+    WiFiClientSecure patchClient;
+    patchClient.setInsecure();
+    HTTPClient http;
+    http.begin(patchClient, userDocUrl + "?updateMask.fieldPaths=hardware_trigger");
+    http.addHeader("Content-Type", "application/json");
+    http.addHeader("User-Agent", "ESP32-SynchroM/1.0");
+    
+    int code = http.sendRequest("PATCH", "{\"fields\": {\"hardware_trigger\": {\"integerValue\": \"1\"}}}");
+    http.end();
+
+    if (code == 200 || code == 204) {
+      updateScreenStatus("DOSE LOGGED", "Thank You!");
+      delay(1200);
+    } else {
+      hasFiredThisCycle = false;
+      updateScreenStatus("SYNC ERR", String(code));
+      delay(1500);
+    }
+  }
+}

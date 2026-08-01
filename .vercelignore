@@ -1,0 +1,17 @@
+# None of this is needed to build the Flutter *web* app — it's all for the
+# ESP32 pillbox firmware/Wokwi simulation side of the project, which stays
+# completely separate from this deployment. Skipping it just makes Vercel's
+# upload/build faster; nothing here affects Wokwi, which never touches
+# Vercel at all.
+.pio/
+src/
+platformio.ini
+wokwi.toml
+diagram.json
+
+# Native app platforms this deployment doesn't build
+android/
+ios/
+linux/
+macos/
+windows/

@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "635666592641",
+    "project_id": "synchrom-6ec50",
+    "storage_bucket": "synchrom-6ec50.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:635666592641:android:eb92c1bae49864563eae80",
+        "android_client_info": {
+          "package_name": "com.example.fyp_app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAI3eFLywrquWtYkV01_A9Lo9WNP8Sdw10"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
