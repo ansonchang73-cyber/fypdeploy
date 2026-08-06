@@ -8,15 +8,21 @@
 /// adapts `MedicationTask` down to this, same pattern as
 /// `adherence_analytics` and `system_health` already use.
 class RoutineDose {
+  final String id;
   final String name;
   final String dosage;
   final String time;
   final bool isCompleted;
+  final bool isMarkedMissed;
+  final String status;
 
   const RoutineDose({
+    required this.id,
     required this.name,
     required this.dosage,
     required this.time,
     required this.isCompleted,
+    required this.isMarkedMissed,
+    required this.status,
   });
 }

@@ -20,10 +20,13 @@ final patientRoutineProvider = StreamProvider.family
             (tasks) => tasks
                 .map(
                   (task) => RoutineDose(
+                    id: task.id,
                     name: task.name,
                     dosage: task.dosage,
                     time: task.time,
                     isCompleted: task.status == TaskStatus.completed,
+                    isMarkedMissed: task.status == TaskStatus.missed,
+                    status: task.status.name,
                   ),
                 )
                 .toList(),

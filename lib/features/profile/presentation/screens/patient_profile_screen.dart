@@ -42,8 +42,6 @@ class _PatientProfileScreenState extends ConsumerState<PatientProfileScreen> {
     _caregiverPhoneController = TextEditingController();
 
     _allergiesController.addListener(_evaluateDirtyState);
-    _caregiverNameController.addListener(_evaluateDirtyState);
-    _caregiverPhoneController.addListener(_evaluateDirtyState);
 
     _generateDynamicReportMonths();
   }
@@ -58,14 +56,16 @@ class _PatientProfileScreenState extends ConsumerState<PatientProfileScreen> {
 
   void _generateDynamicReportMonths() {
     final now = DateTime.now();
+    DateTime currentMonthToGenerate = DateTime(now.year, now.month, 1);
+    final DateTime startMonth = DateTime(2026, 7, 1);
 
-    final DateTime targetMonth = now.day == 1
-        ? DateTime(now.year, now.month - 1, 1)
-        : DateTime(now.year, now.month, 1);
-    final String label = adherenceReportLabelForMonth(targetMonth);
+    while (!currentMonthToGenerate.isBefore(startMonth)) {
+      final String label = adherenceReportLabelForMonth(currentMonthToGenerate);
+      _selectedReports[label] = false;
+      _reportTargetMonths[label] = currentMonthToGenerate;
 
-    _selectedReports[label] = false;
-    _reportTargetMonths[label] = targetMonth;
+      currentMonthToGenerate = DateTime(currentMonthToGenerate.year, currentMonthToGenerate.month - 1, 1);
+    }
   }
 
   void _populateInitialData(dynamic patient) {
@@ -81,9 +81,7 @@ class _PatientProfileScreenState extends ConsumerState<PatientProfileScreen> {
   void _evaluateDirtyState() {
     if (!_isInitialized || _originalState == null) return;
 
-    final hasChanges = _allergiesController.text != _originalState.allergies ||
-        _caregiverNameController.text != _originalState.primaryDoctor ||
-        _caregiverPhoneController.text != _originalState.doctorContact;
+    final hasChanges = _allergiesController.text != _originalState.allergies;
 
     if (hasChanges != _isDirty) {
       setState(() => _isDirty = hasChanges);
@@ -98,8 +96,6 @@ class _PatientProfileScreenState extends ConsumerState<PatientProfileScreen> {
     try {
       await ref.read(patientProfileProvider.notifier).updateProfile({
         'allergies': _allergiesController.text.trim(),
-        'primaryDoctor': _caregiverNameController.text.trim(),
-        'doctorContact': _caregiverPhoneController.text.trim(),
       });
       if (mounted) Navigator.pop(context);
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Care parameters successfully updated!'), backgroundColor: Colors.green));
@@ -488,8 +484,8 @@ class _PatientProfileScreenState extends ConsumerState<PatientProfileScreen> {
                         _buildDropdownFieldHeader(LucideIcons.alertTriangle, 'Emergency Medical Indicators', Colors.red.shade700), const SizedBox(height: 8),
                         _buildInlineFormInputField(label: 'Known Active Allergies', controller: _allergiesController, hint: 'e.g., Penicillin, Nuts, None'), const SizedBox(height: 20),
                         _buildDropdownFieldHeader(LucideIcons.users, 'Family & Primary Caregivers', Colors.purple), const SizedBox(height: 8),
-                        _buildInlineFormInputField(label: 'Caregiver Name (Emergency Contact)', controller: _caregiverNameController, hint: 'Enter emergency contact name'), const SizedBox(height: 12),
-                        _buildInlineFormInputField(label: 'Caregiver Phone Number', controller: _caregiverPhoneController, hint: 'Enter mobile voice line', keyboardType: TextInputType.phone),
+                        Column(crossAxisAlignment: CrossAxisAlignment.start, children: [const SizedBox(height: 4), TextFormField(controller: _caregiverNameController, readOnly: true, style: const TextStyle(fontSize: 13, color: Colors.black87), decoration: InputDecoration(hintText: 'Enter emergency contact name', labelText: 'Caregiver Name (Emergency Contact)', labelStyle: const TextStyle(fontSize: 12, color: Colors.black54), hintStyle: TextStyle(color: Colors.grey.shade400, fontSize: 12), suffixIcon: const Icon(LucideIcons.lock, size: 16, color: Colors.grey), contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10), filled: true, fillColor: const Color(0xFFF1F5F9), enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: Colors.grey.shade200)), focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: Color(0xFF3B82F6))))) ]), const SizedBox(height: 12),
+                        Column(crossAxisAlignment: CrossAxisAlignment.start, children: [const SizedBox(height: 4), TextFormField(controller: _caregiverPhoneController, readOnly: true, keyboardType: TextInputType.phone, style: const TextStyle(fontSize: 13, color: Colors.black87), decoration: InputDecoration(hintText: 'Enter mobile voice line', labelText: 'Caregiver Phone Number', labelStyle: const TextStyle(fontSize: 12, color: Colors.black54), hintStyle: TextStyle(color: Colors.grey.shade400, fontSize: 12), suffixIcon: const Icon(LucideIcons.lock, size: 16, color: Colors.grey), contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10), filled: true, fillColor: const Color(0xFFF1F5F9), enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: Colors.grey.shade200)), focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: Color(0xFF3B82F6))))) ]),
                         if (_isDirty) ...[
                           const SizedBox(height: 16),
                           SizedBox(width: double.infinity, height: 44, child: ElevatedButton.icon(onPressed: () => _persistCareProfile(patient.id), icon: const Icon(LucideIcons.save, size: 16, color: Colors.white), label: const Text('Save Form Updates', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.white)), style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF10B981), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)), elevation: 0))),

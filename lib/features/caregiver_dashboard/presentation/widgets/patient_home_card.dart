@@ -9,19 +9,103 @@ import '../../domain/entities/linked_patient_summary.dart';
 import '../providers/caregiver_dashboard_providers.dart';
 import '../providers/patient_routine_provider.dart';
 import 'adherence_ring.dart';
+import '../../../medication_management/presentation/screens/add_medication_screen.dart';
+import '../../../system_health/presentation/providers/system_health_providers.dart';
+import '../../../medication_management/presentation/providers/medication_management_providers.dart';
+import '../../domain/entities/routine_dose.dart';
 
 /// One linked patient's section on the Home tab: who they are, their
 /// pie-chart adherence for today, and their routine list underneath —
 /// exactly the three things asked for, stacked per patient so this still
 /// makes sense whether a caregiver has one linked patient or several.
-class PatientHomeCard extends ConsumerWidget {
+class PatientHomeCard extends ConsumerStatefulWidget {
   const PatientHomeCard({super.key, required this.patient});
 
   final LinkedPatientSummary patient;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final routineAsync = ref.watch(patientRoutineProvider(patient.id));
+  ConsumerState<PatientHomeCard> createState() => _PatientHomeCardState();
+}
+
+class _PatientHomeCardState extends ConsumerState<PatientHomeCard> {
+  String? _promptedDoseId;
+
+  DateTime _parseTime(String timeStr) {
+    try {
+      final cleanTime = timeStr.toUpperCase().trim();
+      final isPM = cleanTime.contains('PM');
+      final isAM = cleanTime.contains('AM');
+      final rawTimeStr = cleanTime.replaceAll(RegExp(r'[A-Z\s]'), '');
+      final parts = rawTimeStr.split(':');
+      if (parts.isNotEmpty) {
+        int hour = int.parse(parts[0].trim());
+        final int minute = parts.length > 1 ? int.parse(parts[1].trim()) : 0;
+        if (isPM && hour < 12) hour += 12;
+        if (isAM && hour == 12) hour = 0;
+        final now = DateTime.now();
+        return DateTime(now.year, now.month, now.day, hour, minute);
+      }
+    } catch (_) {}
+    return DateTime.now();
+  }
+
+  void _showCaregiverPromptDialog(BuildContext context, RoutineDose dose) {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          backgroundColor: Colors.white,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+          title: Row(
+            children: [
+              const Icon(LucideIcons.alertOctagon, color: Color(0xFFF59E0B), size: 28),
+              const SizedBox(width: 12),
+              Text('Critical Schedule Delay', style: GoogleFonts.inter(fontSize: 18, fontWeight: FontWeight.bold, color: const Color(0xFF1E3A8A))),
+            ],
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'The scheduled window for ${dose.name} (${dose.time}) has been exceeded by more than 15 minutes.',
+                style: GoogleFonts.inter(fontSize: 14, color: Colors.grey.shade700, height: 1.4),
+              ),
+              const SizedBox(height: 16),
+              Text('Did the patient take this late, or was it missed entirely?', style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.black87)),
+            ],
+          ),
+          actionsAlignment: MainAxisAlignment.spaceBetween,
+          actions: [
+            TextButton(
+              onPressed: () async {
+                await ref.read(medicationScheduleRepositoryProvider).markAsTaken(dose.id, widget.patient.id);
+                if (context.mounted) Navigator.pop(context);
+              },
+              child: Text('Taken Late', style: GoogleFonts.inter(color: const Color(0xFFF59E0B), fontWeight: FontWeight.bold)),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFFEF4444),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                elevation: 0,
+              ),
+              onPressed: () async {
+                await ref.read(medicationStatusRepositoryProvider).markAsMissed(dose.id);
+                if (context.mounted) Navigator.pop(context);
+              },
+              child: Text('Missed Entirely', style: GoogleFonts.inter(color: Colors.white, fontWeight: FontWeight.bold)),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final routineAsync = ref.watch(patientRoutineProvider(widget.patient.id));
 
     return GlassPanel(
       padding: const EdgeInsets.all(20),
@@ -31,15 +115,32 @@ class PatientHomeCard extends ConsumerWidget {
         children: [
           Row(
             children: [
-              CircleAvatar(radius: 24, backgroundImage: NetworkImage(patient.avatarUrl)),
+              CircleAvatar(radius: 24, backgroundImage: NetworkImage(widget.patient.avatarUrl)),
               const SizedBox(width: 14),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text('LINKED PATIENT', style: GoogleFonts.inter(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.grey.shade500, letterSpacing: 1.1)),
-                    Text(patient.fullName, style: GoogleFonts.inter(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.black87)),
+                    Text(widget.patient.fullName, style: GoogleFonts.inter(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.black87)),
                   ],
+                ),
+              ),
+              IconButton(
+                onPressed: () {
+                  Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (context) => CreateMedicationScheduleScreen(
+                        userId: widget.patient.id,
+                      ),
+                    ),
+                  );
+                },
+                icon: const Icon(LucideIcons.plus, size: 20),
+                tooltip: 'Add Medication',
+                style: IconButton.styleFrom(
+                  backgroundColor: const Color(0xFFEEF2FF),
+                  foregroundColor: const Color(0xFF6366F1),
                 ),
               ),
             ],
@@ -53,6 +154,23 @@ class PatientHomeCard extends ConsumerWidget {
               child: Text('Failed to load routine: $err', style: GoogleFonts.inter(color: Colors.red.shade700, fontSize: 12)),
             ),
             data: (doses) {
+              final now = DateTime.now();
+              for (final dose in doses) {
+                if (dose.isCompleted || dose.isMarkedMissed) continue;
+                final doseTime = _parseTime(dose.time);
+                final minutesLate = now.difference(doseTime).inMinutes;
+                if (minutesLate > 15 && minutesLate <= 60) {
+                  if (_promptedDoseId != dose.id) {
+                    WidgetsBinding.instance.addPostFrameCallback((_) {
+                      if (!mounted) return;
+                      setState(() => _promptedDoseId = dose.id);
+                      _showCaregiverPromptDialog(context, dose);
+                    });
+                  }
+                  break;
+                }
+              }
+
               final percentage = ref.watch(computeDailyAdherencePercentageProvider).call(doses);
 
               return Column(

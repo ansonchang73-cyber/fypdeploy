@@ -32,6 +32,8 @@ import '../../../adherence_analytics/presentation/providers/adherence_summary_pr
 // Needed so the *current* month's report can also see today's still-live
 // schedule, not just what's already been permanently logged.
 import '../../../profile/domain/usecases/merge_live_overdue_doses.dart';
+import '../providers/patient_routine_provider.dart';
+import '../../domain/entities/routine_dose.dart';
 
 /// "1" -> "1st", "2" -> "2nd", "26" -> "26th", etc.
 String _ordinal(int day) {
@@ -58,50 +60,53 @@ String _ordinal(int day) {
 final _monthlyAdherenceProvider = FutureProvider.family<AdherenceReportData,
     ({String patientId, String patientName})>((ref, params) async {
   final now = DateTime.now();
-  final startOfMonth = DateTime(now.year, now.month, 1);
+  final lastMonth = DateTime(now.year, now.month - 1, 1);
+  final endOfLastMonth = DateTime(now.year, now.month, 0, 23, 59, 59);
+  
   final buildReport = ref.read(profile_providers.buildAdherenceReportProvider);
-  // Same "up to today" boundary the patient's own PDF export already uses
-  // (`ReportExportController.exportAdherenceReports`), so the live numbers
-  // shown here always match what ends up in the downloaded PDF.
-  final queryEnd = buildReport.resolveQueryEnd(now);
 
-  final logs =
+  var logs =
       await ref.read(profile_providers.adherenceRepositoryProvider).fetchLogs(
             patientId: params.patientId,
-            from: startOfMonth,
-            to: queryEnd,
+            from: lastMonth,
+            to: endOfLastMonth,
           );
+
+  DateTime targetMonth = lastMonth;
+  DateTime queryEnd = endOfLastMonth;
+
+  if (logs.isEmpty) {
+    targetMonth = DateTime(now.year, now.month, 1);
+    queryEnd = buildReport.resolveQueryEnd(now);
+    logs = await ref.read(profile_providers.adherenceRepositoryProvider).fetchLogs(
+      patientId: params.patientId,
+      from: targetMonth,
+      to: queryEnd,
+    );
+  }
 
   // Fetched once, shared by the three things below that all need it:
   // today's live overdue-dose check, the theoretical expected-dose
   // count, and the "your medications, at these times" listing.
   final schedule = await fetchDailySchedule(ref, params.patientId);
 
-  // `medication_logs` only ever has an entry once a dose has been
-  // explicitly confirmed taken/missed, or once a day boundary has passed
-  // and the daily reset has backfilled anything left unconfirmed. Since
-  // this provider is always anchored to "now" (it's always reporting on
-  // the current, still-in-progress month), that means today's doses that
-  // are already overdue but not yet confirmed (or reset) would otherwise
-  // be invisible to the calculation entirely — which is exactly what made
-  // "2 confirmed doses out of 2 logged" read as 100%, even with other
-  // reminders sitting ignored. Merge those in live, computed fresh every
-  // time this provider runs, so it self-corrects the moment a dose
-  // becomes overdue rather than waiting for the next daily reset.
-  final mergedLogs = [
-    ...logs,
-    ...liveOverdueEntriesForToday(schedule, logs),
-  ];
+  // Merge overdue entries only if we're dealing with the current month
+  final mergedLogs = targetMonth.year == now.year && targetMonth.month == now.month
+      ? [
+          ...logs,
+          ...liveOverdueEntriesForToday(schedule, logs),
+        ]
+      : logs;
 
-  final daysInPeriod = daysInReportPeriod(startOfMonth);
+  final daysInPeriod = daysInReportPeriod(targetMonth);
 
   return buildReport(
     logs: mergedLogs,
-    reportLabel: monthlyReportLabel(now),
+    reportLabel: monthlyReportLabel(targetMonth),
     patientName: params.patientName,
     expectedTotalDoses: expectedTotalDosesFor(schedule, daysInPeriod),
     dosesPerDay: schedule.length,
-    periodStart: startOfMonth,
+    periodStart: targetMonth,
     daysInPeriod: daysInPeriod,
     medicationSchedule: sortedMedicationSchedule(schedule),
   );
@@ -111,11 +116,14 @@ final _monthlyAdherenceProvider = FutureProvider.family<AdherenceReportData,
 /// is every month except when checked on its very last day), "July 2026
 /// Adherence Report (up to 26th)". Shared between the live on-screen card
 /// and the PDF export so both always show the exact same label.
-String monthlyReportLabel(DateTime now) {
-  final monthLabel = DateFormat('MMMM yyyy').format(now);
-  final lastDayOfMonth = DateTime(now.year, now.month + 1, 0).day;
-  if (now.day < lastDayOfMonth) {
-    return '$monthLabel Adherence Report (up to ${_ordinal(now.day)})';
+String monthlyReportLabel(DateTime targetMonth) {
+  final now = DateTime.now();
+  final monthLabel = DateFormat('MMMM yyyy').format(targetMonth);
+  if (targetMonth.year == now.year && targetMonth.month == now.month) {
+    final lastDayOfMonth = DateTime(now.year, now.month + 1, 0).day;
+    if (now.day < lastDayOfMonth) {
+      return '$monthLabel Adherence Report (up to ${_ordinal(now.day)})';
+    }
   }
   return '$monthLabel Adherence Report';
 }
@@ -239,15 +247,16 @@ class _PatientReportsSectionState
   Future<void> _generateAndDownload() async {
     setState(() => _isGenerating = true);
     try {
-      final now = DateTime.now();
-      final startOfMonth = DateTime(now.year, now.month, 1);
-      final label = monthlyReportLabel(now);
+      final reportData = ref.read(_monthlyAdherenceProvider(_monthlyKey)).value;
+      if (reportData == null) return;
+      final targetMonth = reportData.periodStart;
+      final label = reportData.reportLabel;
 
       await ref.read(reportExportControllerProvider).exportAdherenceReports(
         patientId: widget.patientId,
         patientName: widget.patientName,
         chosenReports: [label],
-        reportTargetMonths: {label: startOfMonth},
+        reportTargetMonths: {label: targetMonth},
       );
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -306,13 +315,11 @@ class _PatientReportsSectionState
         ),
         const SizedBox(height: 12),
 
-        // Today's adherence — quick daily glance, live/real-time.
-        _buildDailyAdherenceCard(),
-
-        // Current-month adherence — same numbers, same time-of-day
-        // breakdown, same dose-by-dose log that's in the PDF, visible
-        // without downloading anything first, plus the download button.
+        // Last month's adherence — percentage summary.
         _buildMonthlySummaryCard(),
+
+        // Today's adherence — daily dose details.
+        _buildDailyAdherenceCard(),
 
         const SizedBox(height: 4),
         Text(
@@ -353,111 +360,147 @@ class _PatientReportsSectionState
             ),
           ),
           data: (reports) {
-            if (reports.isEmpty) {
-              return Padding(
-                padding: const EdgeInsets.only(bottom: 20),
-                child: GlassPanel(
-                  padding: const EdgeInsets.all(16),
-                  borderRadius: 14,
-                  child: Row(
-                    children: [
-                      Icon(LucideIcons.fileX,
-                          size: 20, color: Colors.grey.shade400),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Text(
-                          'No adherence reports generated yet.',
-                          style: GoogleFonts.inter(
-                              fontSize: 13, color: Colors.grey.shade500),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              );
+            final now = DateTime.now();
+            final startMonth = DateTime(2026, 7, 1);
+            final List<DateTime> months = [];
+            
+            DateTime current = DateTime(now.year, now.month, 1);
+            while (!current.isBefore(startMonth)) {
+              months.add(current);
+              current = DateTime(current.year, current.month - 1, 1);
             }
 
             return Padding(
               padding: const EdgeInsets.only(bottom: 24),
               child: Column(
-                children: reports.map((report) {
+                children: months.map((month) {
+                  final label = adherenceReportLabelForMonth(month);
+                  final report = reports.cast<AdherenceReportSummary?>().firstWhere(
+                        (r) => r?.reportLabel == label,
+                        orElse: () => null,
+                      );
+
                   return Padding(
                     padding: const EdgeInsets.only(bottom: 8),
-                    child: InkWell(
-                      onTap: () async {
-                        final uri = Uri.tryParse(report.downloadUrl);
-                        if (uri != null && await canLaunchUrl(uri)) {
-                          await launchUrl(uri,
-                              mode: LaunchMode.externalApplication);
-                        }
-                      },
-                      borderRadius: BorderRadius.circular(14),
-                      child: GlassPanel(
-                        padding: const EdgeInsets.all(14),
-                        borderRadius: 14,
-                        child: Row(
-                          children: [
-                            Container(
-                              padding: const EdgeInsets.all(10),
-                              decoration: BoxDecoration(
-                                color: const Color(0xFF0058BC)
-                                    .withValues(alpha: 0.1),
-                                borderRadius: BorderRadius.circular(10),
-                              ),
-                              child: const Icon(LucideIcons.fileText,
-                                  color: Color(0xFF0058BC), size: 18),
+                    child: GlassPanel(
+                      padding: const EdgeInsets.all(14),
+                      borderRadius: 14,
+                      child: Row(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(10),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF0058BC).withValues(alpha: 0.1),
+                              borderRadius: BorderRadius.circular(10),
                             ),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    report.reportLabel,
-                                    style: GoogleFonts.inter(
-                                        fontSize: 13,
-                                        fontWeight: FontWeight.w600),
-                                    maxLines: 2,
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
+                            child: const Icon(LucideIcons.fileText,
+                                color: Color(0xFF0058BC), size: 18),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  label,
+                                  style: GoogleFonts.inter(
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.w600),
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                                if (report != null) ...[
                                   const SizedBox(height: 2),
                                   Text(
-                                    DateFormat('MMM d, yyyy')
-                                        .format(report.generatedAt),
+                                    DateFormat('MMM d, yyyy').format(report.generatedAt),
                                     style: GoogleFonts.inter(
                                         fontSize: 11,
                                         color: Colors.grey.shade500),
                                   ),
-                                ],
-                              ),
+                                ]
+                              ],
                             ),
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 8, vertical: 4),
-                              decoration: BoxDecoration(
-                                color: const Color(0xFF10B981)
-                                    .withValues(alpha: 0.1),
-                                borderRadius: BorderRadius.circular(8),
-                              ),
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  const Icon(LucideIcons.downloadCloud,
-                                      size: 14, color: Color(0xFF10B981)),
-                                  const SizedBox(width: 4),
-                                  Text(
-                                    'PDF',
-                                    style: GoogleFonts.inter(
-                                      fontSize: 10,
-                                      fontWeight: FontWeight.bold,
-                                      color: const Color(0xFF10B981),
+                          ),
+                          if (report != null)
+                            InkWell(
+                              onTap: () async {
+                                final uri = Uri.tryParse(report.downloadUrl);
+                                if (uri != null && await canLaunchUrl(uri)) {
+                                  await launchUrl(uri, mode: LaunchMode.externalApplication);
+                                }
+                              },
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFF10B981).withValues(alpha: 0.1),
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    const Icon(LucideIcons.downloadCloud,
+                                        size: 14, color: Color(0xFF10B981)),
+                                    const SizedBox(width: 4),
+                                    Text(
+                                      'PDF',
+                                      style: GoogleFonts.inter(
+                                        fontSize: 10,
+                                        fontWeight: FontWeight.bold,
+                                        color: const Color(0xFF10B981),
+                                      ),
                                     ),
+                                  ],
+                                ),
+                              ),
+                            )
+                          else
+                            InkWell(
+                              onTap: () async {
+                                setState(() => _isGenerating = true);
+                                try {
+                                  await ref.read(reportExportControllerProvider).exportAdherenceReports(
+                                    patientId: widget.patientId,
+                                    patientName: widget.patientName,
+                                    chosenReports: [label],
+                                    reportTargetMonths: {label: month},
+                                  );
+                                  if (!mounted) return;
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(
+                                      content: Text('Report generated successfully.'),
+                                      backgroundColor: Color(0xFF10B981),
+                                    ),
+                                  );
+                                  ref.invalidate(_patientReportsProvider(widget.patientId));
+                                } catch (e) {
+                                  if (!mounted) return;
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                      content: Text('Failed to generate report: $e'),
+                                      backgroundColor: Colors.red,
+                                    ),
+                                  );
+                                } finally {
+                                  if (mounted) setState(() => _isGenerating = false);
+                                }
+                              },
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFF0058BC).withValues(alpha: 0.1),
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: Text(
+                                  'Generate',
+                                  style: GoogleFonts.inter(
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.bold,
+                                    color: const Color(0xFF0058BC),
                                   ),
-                                ],
+                                ),
                               ),
                             ),
-                          ],
-                        ),
+                        ],
                       ),
                     ),
                   );
@@ -474,6 +517,7 @@ class _PatientReportsSectionState
   Widget _buildDailyAdherenceCard() {
     final dailyAsync =
         ref.watch(adherenceSummaryForPatientProvider(widget.patientId));
+    final routineAsync = ref.watch(patientRoutineProvider(widget.patientId));
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 14),
@@ -536,30 +580,84 @@ class _PatientReportsSectionState
                   );
                 }
                 final missed = summary.totalDoses - summary.completedDoses;
-                return Row(
+                return Column(
                   children: [
-                    Expanded(
-                      child: _statChip(
-                        '${summary.overallAdherencePercent}%',
-                        'Adherence',
-                        _adherenceColor(summary.overallAdherencePercent),
-                      ),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: _statChip(
+                            '${summary.overallAdherencePercent}%',
+                            'Adherence',
+                            _adherenceColor(summary.overallAdherencePercent),
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: _statChip(
+                            '${summary.completedDoses}',
+                            'Taken',
+                            const Color(0xFF10B981),
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: _statChip(
+                            '$missed',
+                            'Missed',
+                            Colors.red.shade400,
+                          ),
+                        ),
+                      ],
                     ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: _statChip(
-                        '${summary.completedDoses}',
-                        'Taken',
-                        const Color(0xFF10B981),
-                      ),
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: _statChip(
-                        '$missed',
-                        'Missed',
-                        Colors.red.shade400,
-                      ),
+                    const SizedBox(height: 16),
+                    routineAsync.when(
+                      loading: () => const Center(
+                          child: CircularProgressIndicator(strokeWidth: 2)),
+                      error: (err, stack) => const SizedBox(),
+                      data: (doses) {
+                        if (doses.isEmpty) return const SizedBox();
+                        return Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: doses.map((dose) {
+                            final statusColor = dose.isCompleted
+                                ? const Color(0xFF10B981)
+                                : Colors.red.shade400;
+                            return Padding(
+                              padding: const EdgeInsets.symmetric(vertical: 4),
+                              child: Row(
+                                children: [
+                                  Icon(
+                                    dose.isCompleted
+                                        ? LucideIcons.checkCircle2
+                                        : LucideIcons.xCircle,
+                                    size: 14,
+                                    color: statusColor,
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: Text(
+                                      dose.name,
+                                      style: GoogleFonts.inter(
+                                          fontSize: 12.5,
+                                          fontWeight: FontWeight.w500),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Text(
+                                    dose.time,
+                                    style: GoogleFonts.inter(
+                                        fontSize: 11,
+                                        color: Colors.grey.shade500,
+                                        fontWeight: FontWeight.w600),
+                                  ),
+                                ],
+                              ),
+                            );
+                          }).toList(),
+                        );
+                      },
                     ),
                   ],
                 );
@@ -574,10 +672,6 @@ class _PatientReportsSectionState
   Widget _buildMonthlySummaryCard() {
     final summaryAsync = ref.watch(_monthlyAdherenceProvider(_monthlyKey));
     final now = DateTime.now();
-    final lastDayOfMonth = DateTime(now.year, now.month + 1, 0).day;
-    final subtitle = now.day < lastDayOfMonth
-        ? '${DateFormat('MMMM yyyy').format(now)} (up to ${_ordinal(now.day)})'
-        : DateFormat('MMMM yyyy').format(now);
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 18),
@@ -603,14 +697,24 @@ class _PatientReportsSectionState
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text('Monthly Adherence',
+                      Text("Last Month's Medication Adherence",
                           style: GoogleFonts.inter(
                               fontSize: 14,
                               fontWeight: FontWeight.bold,
                               color: const Color(0xFF1E3A8A))),
-                      Text(subtitle,
+                      summaryAsync.when(
+                        data: (report) => Text(
+                          report.periodStart.year == now.year && report.periodStart.month == now.month 
+                            ? now.day < DateTime(now.year, now.month + 1, 0).day
+                                ? '${DateFormat('MMMM yyyy').format(now)} (up to ${_ordinal(now.day)})'
+                                : DateFormat('MMMM yyyy').format(now)
+                            : DateFormat('MMMM yyyy').format(report.periodStart),
                           style: GoogleFonts.inter(
-                              fontSize: 11, color: Colors.grey.shade500)),
+                              fontSize: 11, color: Colors.grey.shade500),
+                        ),
+                        loading: () => const SizedBox(),
+                        error: (_, __) => const SizedBox(),
+                      ),
                     ],
                   ),
                 ),
