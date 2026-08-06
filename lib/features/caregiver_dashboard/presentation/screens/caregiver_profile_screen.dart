@@ -13,7 +13,7 @@ import '../widgets/caregiver_patient_profile_card.dart';
 import '../../../profile/domain/entities/appointment.dart';
 import '../../../profile/presentation/providers/appointments_providers.dart';
 import '../../../profile/presentation/providers/report_export_controller.dart';
-import '../../../profile/presentation/providers/profile_providers.dart' as profile_providers;
+import '../../../profile/domain/usecases/build_adherence_report.dart';
 import 'caregiver_settings_screen.dart';
 
 class CaregiverProfileScreen extends ConsumerWidget {
@@ -64,10 +64,32 @@ class _PatientProfileSection extends ConsumerWidget {
 
   final LinkedPatientSummary patient;
 
-  String _appointmentRecordFileName(DateTime appointmentDate) {
+  String _appointmentRecordFileName(DateTime appointmentDate, BuildContext context, WidgetRef ref) {
     final monthStart = DateTime(appointmentDate.year, appointmentDate.month, 1);
-    final label = profile_providers.adherenceReportLabelForMonth(monthStart);
+    
+    // We can use the BuildAdherenceReport UseCase to get the formatted label string
+    final now = DateTime.now();
+    final monthLabel = DateFormat('MMMM yyyy').format(monthStart);
+    String label = '$monthLabel Adherence Report';
+    
+    if (monthStart.year == now.year && monthStart.month == now.month) {
+      final lastDayOfMonth = DateTime(now.year, now.month + 1, 0).day;
+      if (now.day < lastDayOfMonth) {
+        label = '$monthLabel Adherence Report (up to ${_ordinal(now.day)})';
+      }
+    }
+
     return '${label.replaceAll(RegExp(r'[^a-zA-Z0-9]'), '_')}.pdf';
+  }
+
+  String _ordinal(int day) {
+    if (day >= 11 && day <= 13) return '${day}th';
+    switch (day % 10) {
+      case 1: return '${day}st';
+      case 2: return '${day}nd';
+      case 3: return '${day}rd';
+      default: return '${day}th';
+    }
   }
 
   @override
@@ -77,8 +99,8 @@ class _PatientProfileSection extends ConsumerWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // Basic Profile Info Card
-        CaregiverPatientProfileCard(patient: patient),
+        // Basic Profile Info Card. Pass patientId, not the whole patient object.
+        CaregiverPatientProfileCard(patientId: patient.id),
         const SizedBox(height: 24),
 
         // Past Appointments Title
@@ -127,7 +149,7 @@ class _PatientProfileSection extends ConsumerWidget {
               separatorBuilder: (context, index) => const SizedBox(height: 12),
               itemBuilder: (context, index) {
                 final Appointment appointment = visibleAppointments[index];
-                final String fileName = _appointmentRecordFileName(appointment.dateTime);
+                final String fileName = _appointmentRecordFileName(appointment.dateTime, context, ref);
                 
                 return GlassPanel(
                   padding: const EdgeInsets.all(16),
