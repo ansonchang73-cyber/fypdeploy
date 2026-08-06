@@ -28,7 +28,7 @@ class MainDashboardScreen extends ConsumerWidget {
 
     // ACTIVATE: Replace the text placeholders with your actual screens
     final List<Widget> screens = [
-      const SystemHealthScreen(), // Index 0: Home / Smart Alerts Center
+      SystemHealthScreen(), // Index 0: Home / Smart Alerts Center
       const TimelineScreen(), // Index 1: Schedule / Today's Medication Tracker
       const AdherenceAnalyticsScreen(), // Index 2: Analytics Dashboard
       const PatientProfileScreen(), // Index 3: Profile / Alexander Henderson
