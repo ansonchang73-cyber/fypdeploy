@@ -137,23 +137,14 @@ void setup() {
 }
 
 void loop() {
-  unsigned long currentMillis = millis();
-  if (currentMillis - lastCheckTime >= checkInterval) {
-    lastCheckTime = currentMillis;
-    boxIsUnlocked = checkAvailability();
-    digitalWrite(ALARM_LED_PIN, boxIsUnlocked ? HIGH : LOW);
-  }
-
+  // 1. FIRST: Instantly check if you are pressing the button!
   int currentLidState = digitalRead(LID_SWITCH_PIN); 
   
-  // ✅ FIX: When the button is NOT pressed (HIGH), reset the cycle
-  if (currentLidState == HIGH) hasFiredThisCycle = false;
-
-  // ✅ FIX: When the button IS pressed (LOW), trigger the dose
-  if (currentLidState == LOW && !hasFiredThisCycle) {
-    delay(50); // Debounce
-    if (digitalRead(LID_SWITCH_PIN) != LOW || !boxIsUnlocked) return;
-    
+  if (currentLidState == HIGH) {
+    hasFiredThisCycle = false; // Button is released, reset cycle
+  } 
+  else if (currentLidState == LOW && !hasFiredThisCycle && boxIsUnlocked) {
+    // Button IS pressed, and the box is unlocked!
     hasFiredThisCycle = true; 
     updateScreenStatus("PROCESSING...", "Syncing...");
     
@@ -170,11 +161,22 @@ void loop() {
 
     if (code == 200 || code == 204) {
       updateScreenStatus("DOSE LOGGED", "Thank You!");
-      delay(1200);
+      delay(2000); // Wait 2 seconds so you can actually read the screen
     } else {
       hasFiredThisCycle = false;
       updateScreenStatus("SYNC ERR", String(code));
-      delay(1500);
+      delay(2000);
     }
+    
+    // Skip the Google check this exact millisecond so we don't lag
+    return; 
+  }
+
+  // 2. SECOND: Do the heavy background check with Google
+  unsigned long currentMillis = millis();
+  if (currentMillis - lastCheckTime >= checkInterval) {
+    lastCheckTime = currentMillis;
+    boxIsUnlocked = checkAvailability();
+    digitalWrite(ALARM_LED_PIN, boxIsUnlocked ? HIGH : LOW);
   }
 }
