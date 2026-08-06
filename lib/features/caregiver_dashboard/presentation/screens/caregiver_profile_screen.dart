@@ -46,7 +46,10 @@ class CaregiverProfileScreen extends ConsumerWidget {
           }
 
           return ListView.separated(
-            padding: const EdgeInsets.all(20),
+            // 1. Force the list to always allow scrolling gestures
+            physics: const AlwaysScrollableScrollPhysics(),
+            // 2. Add 100px of bottom padding so the last patient clears the LuminousBottomNavBar
+            padding: const EdgeInsets.fromLTRB(20, 20, 20, 100),
             itemCount: patients.length,
             separatorBuilder: (context, index) => const SizedBox(height: 32),
             itemBuilder: (context, index) {
