@@ -7,6 +7,7 @@ import '../../features/medication_management/presentation/screens/timeline_scree
 import '../../features/system_health/presentation/screens/system_health_screen.dart';
 import '../../features/profile/presentation/screens/patient_profile_screen.dart';
 import '../../features/adherence_analytics/presentation/screens/adherence_analytics_screen.dart';
+import '../../features/system_health/presentation/screens/system_health_screen.dart';
 
 // StateProvider to track the active bottom navigation tab.
 // `.autoDispose` matters here: without it, this is a plain global provider
