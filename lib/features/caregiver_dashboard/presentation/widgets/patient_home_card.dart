@@ -14,10 +14,6 @@ import '../../../system_health/presentation/providers/system_health_providers.da
 import '../../../medication_management/presentation/providers/medication_management_providers.dart';
 import '../../domain/entities/routine_dose.dart';
 
-/// One linked patient's section on the Home tab: who they are, their
-/// pie-chart adherence for today, and their routine list underneath —
-/// exactly the three things asked for, stacked per patient so this still
-/// makes sense whether a caregiver has one linked patient or several.
 class PatientHomeCard extends ConsumerStatefulWidget {
   const PatientHomeCard({super.key, required this.patient});
 
@@ -126,21 +122,21 @@ class _PatientHomeCardState extends ConsumerState<PatientHomeCard> {
                   ],
                 ),
               ),
-              IconButton(
+              TextButton.icon(
                 onPressed: () {
                   Navigator.of(context).push(
                     MaterialPageRoute(
-                      builder: (context) => CreateMedicationScheduleScreen(
-                        userId: widget.patient.id,
-                      ),
+                      builder: (context) => CreateMedicationScheduleScreen(userId: widget.patient.id),
                     ),
                   );
                 },
-                icon: const Icon(LucideIcons.plus, size: 20),
-                tooltip: 'Add Medication',
-                style: IconButton.styleFrom(
+                icon: const Icon(LucideIcons.plus, size: 16),
+                label: Text('Add Med', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w600)),
+                style: TextButton.styleFrom(
                   backgroundColor: const Color(0xFFEEF2FF),
                   foregroundColor: const Color(0xFF6366F1),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                 ),
               ),
             ],
@@ -155,19 +151,22 @@ class _PatientHomeCardState extends ConsumerState<PatientHomeCard> {
             ),
             data: (doses) {
               final now = DateTime.now();
+              final List<RoutineDose> delayedDoses = [];
+
               for (final dose in doses) {
                 if (dose.isCompleted || dose.isMarkedMissed) continue;
                 final doseTime = _parseTime(dose.time);
                 final minutesLate = now.difference(doseTime).inMinutes;
-                if (minutesLate > 15 && minutesLate <= 60) {
-                  if (_promptedDoseId != dose.id) {
+                
+                if (minutesLate > 15) {
+                  delayedDoses.add(dose);
+                  if (minutesLate <= 60 && _promptedDoseId != dose.id) {
                     WidgetsBinding.instance.addPostFrameCallback((_) {
                       if (!mounted) return;
                       setState(() => _promptedDoseId = dose.id);
                       _showCaregiverPromptDialog(context, dose);
                     });
                   }
-                  break;
                 }
               }
 
@@ -175,6 +174,38 @@ class _PatientHomeCardState extends ConsumerState<PatientHomeCard> {
 
               return Column(
                 children: [
+                  if (delayedDoses.isNotEmpty)
+                    Container(
+                      margin: const EdgeInsets.only(bottom: 20),
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFFEF3C7),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: const Color(0xFFFCD34D)),
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(LucideIcons.clock, color: Color(0xFFD97706), size: 20),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: delayedDoses.map((d) {
+                                final delayMins = now.difference(_parseTime(d.time)).inMinutes;
+                                return Text(
+                                  '${d.name} is $delayMins min overdue',
+                                  style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.bold, color: const Color(0xFF92400E)),
+                                );
+                              }).toList(),
+                            ),
+                          ),
+                          TextButton(
+                            onPressed: () {}, 
+                            child: Text('Check', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.bold, color: const Color(0xFFD97706))),
+                          ),
+                        ],
+                      ),
+                    ),
                   Center(child: AdherenceRing(percentage: percentage)),
                   const SizedBox(height: 20),
                   Align(

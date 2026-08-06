@@ -80,17 +80,12 @@ class _PatientProfileScreenState extends ConsumerState<PatientProfileScreen> {
 
   void _evaluateDirtyState() {
     if (!_isInitialized || _originalState == null) return;
-
     final hasChanges = _allergiesController.text != _originalState.allergies;
-
     if (hasChanges != _isDirty) {
       setState(() => _isDirty = hasChanges);
     }
   }
 
-  /// UI no longer touches Firestore directly — it hands the update payload
-  /// to the controller, which delegates to the `UpdatePatientProfile` use
-  /// case.
   Future<void> _persistCareProfile(String userId) async {
     showDialog(context: context, barrierDismissible: false, builder: (_) => const Center(child: CircularProgressIndicator()));
     try {
@@ -172,13 +167,6 @@ class _PatientProfileScreenState extends ConsumerState<PatientProfileScreen> {
     }
   }
 
-  /// Was `_getWeekRangeFileName`, then `Appointment_Record_{Month}_{Year}`
-  /// — both were a naming scheme of their own, disconnected from the
-  /// "Medication Adherence Logs" report this same PDF embeds. Now it's
-  /// named identically to that report (e.g. "July 2026 Adherence Report
-  /// (Up to Jul 29)", sanitized), via the exact same shared label
-  /// function `exportAppointmentRecord` uses internally — so the two can
-  /// never drift into looking like different reports for the same month.
   String _appointmentRecordFileName(DateTime appointmentDate) {
     final monthStart = DateTime(appointmentDate.year, appointmentDate.month, 1);
     final label = adherenceReportLabelForMonth(monthStart);
@@ -206,43 +194,19 @@ class _PatientProfileScreenState extends ConsumerState<PatientProfileScreen> {
         data: (patient) {
           _populateInitialData(patient);
 
-          // Get the linked caregiver from the shared_access system.
           final linkedCaregiversAsync = ref.watch(linkedCaregiversProvider);
           final linkedCaregiver = linkedCaregiversAsync.whenOrNull(
             data: (list) => list.isNotEmpty ? list.first : null,
           );
 
-          // Determine emergency contact: prioritize linked caregiver,
-          // then fall back to manually-entered emergency contact fields.
-          // Use .isNotEmpty checks (not just null) since empty strings
-          // are common defaults.
-          final String emergencyName = 
-              (linkedCaregiver != null && linkedCaregiver.fullName.isNotEmpty)
-                  ? linkedCaregiver.fullName
-                  : (patient.emergencyContactName.isNotEmpty 
-                      ? patient.emergencyContactName : '');
-          final String emergencyPhone = 
-              (linkedCaregiver != null && linkedCaregiver.phone.isNotEmpty)
-                  ? linkedCaregiver.phone
-                  : (patient.emergencyContactPhone.isNotEmpty 
-                      ? patient.emergencyContactPhone : '');
-          // A linked caregiver counts as "has emergency contact" even
-          // without a phone number — we still show their name.
+          final String emergencyName = (linkedCaregiver != null && linkedCaregiver.fullName.isNotEmpty) ? linkedCaregiver.fullName : (patient.emergencyContactName.isNotEmpty ? patient.emergencyContactName : '');
+          final String emergencyPhone = (linkedCaregiver != null && linkedCaregiver.phone.isNotEmpty) ? linkedCaregiver.phone : (patient.emergencyContactPhone.isNotEmpty ? patient.emergencyContactPhone : '');
           final bool hasLinkedCaregiver = linkedCaregiver != null && linkedCaregiver.fullName.isNotEmpty;
-          final bool hasEmergencyContact = hasLinkedCaregiver || 
-              (emergencyName.isNotEmpty && emergencyPhone.isNotEmpty);
+          final bool hasEmergencyContact = hasLinkedCaregiver || (emergencyName.isNotEmpty && emergencyPhone.isNotEmpty);
 
-          // Pre-populate the caregiver form fields from the linked
-          // caregiver. The linked caregiver is the authoritative source,
-          // so always overwrite unless the user has manually typed
-          // something different.
           if (linkedCaregiver != null && _isInitialized) {
-            if (linkedCaregiver.fullName.isNotEmpty) {
-              _caregiverNameController.text = linkedCaregiver.fullName;
-            }
-            if (linkedCaregiver.phone.isNotEmpty) {
-              _caregiverPhoneController.text = linkedCaregiver.phone;
-            }
+            if (linkedCaregiver.fullName.isNotEmpty) _caregiverNameController.text = linkedCaregiver.fullName;
+            if (linkedCaregiver.phone.isNotEmpty) _caregiverPhoneController.text = linkedCaregiver.phone;
           }
 
           final pastAppointmentsAsync = ref.watch(pastAppointmentsProvider(patient.id));
@@ -268,111 +232,47 @@ class _PatientProfileScreenState extends ConsumerState<PatientProfileScreen> {
                 ),
                 const SizedBox(height: 24),
 
-                // ── Emergency Router Card ──
                 Container(
                   decoration: BoxDecoration(
                     color: hasEmergencyContact ? const Color(0xFFEF4444) : Colors.white,
                     borderRadius: BorderRadius.circular(20),
                     boxShadow: [
-                      BoxShadow(
-                        color: hasEmergencyContact 
-                            ? const Color(0xFFEF4444).withValues(alpha: 0.3) 
-                            : Colors.black.withValues(alpha: 0.05),
-                        blurRadius: 12,
-                        offset: const Offset(0, 4),
-                      ),
+                      BoxShadow(color: hasEmergencyContact ? const Color(0xFFEF4444).withValues(alpha: 0.3) : Colors.black.withValues(alpha: 0.05), blurRadius: 12, offset: const Offset(0, 4)),
                     ],
                   ),
                   padding: const EdgeInsets.all(16),
                   child: Row(
                     children: [
-                      // Shows the linked caregiver's actual profile photo
-                      // (set from their own Caregiver Settings screen) when
-                      // one is linked, falling back to the phone/alert icon
-                      // otherwise — so it's immediately recognizable whose
-                      // emergency line this card routes to.
                       (hasLinkedCaregiver && linkedCaregiver!.avatarUrl.isNotEmpty)
                           ? Container(
                               padding: const EdgeInsets.all(2),
-                              decoration: BoxDecoration(
-                                shape: BoxShape.circle,
-                                border: Border.all(
-                                  color: hasEmergencyContact
-                                      ? Colors.white.withValues(alpha: 0.5)
-                                      : const Color(0xFFF59E0B).withValues(alpha: 0.3),
-                                  width: 2,
-                                ),
-                              ),
-                              child: CircleAvatar(
-                                radius: 21,
-                                backgroundImage: NetworkImage(linkedCaregiver!.avatarUrl),
-                              ),
+                              decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: hasEmergencyContact ? Colors.white.withValues(alpha: 0.5) : const Color(0xFFF59E0B).withValues(alpha: 0.3), width: 2)),
+                              child: CircleAvatar(radius: 21, backgroundImage: NetworkImage(linkedCaregiver!.avatarUrl)),
                             )
                           : Container(
                               padding: const EdgeInsets.all(12),
-                              decoration: BoxDecoration(
-                                color: hasEmergencyContact 
-                                    ? Colors.white.withValues(alpha: 0.2)
-                                    : const Color(0xFFF59E0B).withValues(alpha: 0.1),
-                                shape: BoxShape.circle,
-                              ),
-                              child: Icon(
-                                hasEmergencyContact ? LucideIcons.phoneCall : LucideIcons.alertTriangle,
-                                color: hasEmergencyContact ? Colors.white : const Color(0xFFF59E0B),
-                                size: 22,
-                              ),
+                              decoration: BoxDecoration(color: hasEmergencyContact ? Colors.white.withValues(alpha: 0.2) : const Color(0xFFF59E0B).withValues(alpha: 0.1), shape: BoxShape.circle),
+                              child: Icon(hasEmergencyContact ? LucideIcons.phoneCall : LucideIcons.alertTriangle, color: hasEmergencyContact ? Colors.white : const Color(0xFFF59E0B), size: 22),
                             ),
                       const SizedBox(width: 16),
                       Expanded(
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text(
-                              'EMERGENCY ROUTER',
-                              style: GoogleFonts.inter(
-                                fontSize: 10,
-                                fontWeight: FontWeight.bold,
-                                color: hasEmergencyContact ? Colors.white.withValues(alpha: 0.8) : Colors.grey.shade500,
-                                letterSpacing: 1.1,
-                              ),
-                            ),
+                            Text('EMERGENCY ROUTER', style: GoogleFonts.inter(fontSize: 10, fontWeight: FontWeight.bold, color: hasEmergencyContact ? Colors.white.withValues(alpha: 0.8) : Colors.grey.shade500, letterSpacing: 1.1)),
                             const SizedBox(height: 2),
-                            Text(
-                              hasEmergencyContact ? emergencyName : 'No Caregiver Linked',
-                              style: GoogleFonts.inter(
-                                fontSize: 15,
-                                fontWeight: FontWeight.bold,
-                                color: hasEmergencyContact ? Colors.white : Colors.black87,
-                              ),
-                            ),
+                            Text(hasEmergencyContact ? emergencyName : 'No Caregiver Linked', style: GoogleFonts.inter(fontSize: 15, fontWeight: FontWeight.bold, color: hasEmergencyContact ? Colors.white : Colors.black87)),
                             if (hasEmergencyContact && emergencyPhone.isNotEmpty)
-                              Text(
-                                emergencyPhone,
-                                style: GoogleFonts.inter(
-                                  fontSize: 12,
-                                  color: Colors.white.withValues(alpha: 0.85),
-                                  fontWeight: FontWeight.w500,
-                                ),
-                              ),
+                              Text(emergencyPhone, style: GoogleFonts.inter(fontSize: 12, color: Colors.white.withValues(alpha: 0.85), fontWeight: FontWeight.w500)),
                           ],
                         ),
                       ),
                       if (hasEmergencyContact && emergencyPhone.isNotEmpty)
                         IconButton(
-                          style: IconButton.styleFrom(
-                            backgroundColor: Colors.white,
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                            padding: const EdgeInsets.all(10),
-                          ),
+                          style: IconButton.styleFrom(backgroundColor: Colors.white, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)), padding: const EdgeInsets.all(10)),
                           icon: const Icon(LucideIcons.phone, color: Color(0xFFEF4444), size: 18),
                           onPressed: () => _initiateEmergencyCall(emergencyPhone),
                         )
-                      else if (!hasEmergencyContact)
-                        Tooltip(
-                          message: 'Caution: Please link a caregiver profile in Settings to enable emergency voice routing.',
-                          triggerMode: TooltipTriggerMode.tap, preferBelow: false,
-                          child: Container(padding: const EdgeInsets.all(8), decoration: BoxDecoration(color: const Color(0xFFF59E0B).withValues(alpha: 0.1), borderRadius: BorderRadius.circular(8)), child: const Icon(LucideIcons.helpCircle, color: Color(0xFFF59E0B), size: 18)),
-                        ),
                     ],
                   ),
                 ),
@@ -392,18 +292,13 @@ class _PatientProfileScreenState extends ConsumerState<PatientProfileScreen> {
                   error: (err, stack) => Text('Failed to load appointments: $err'),
                   data: (pastAppointments) {
                     if (pastAppointments.isEmpty) return _buildEmptyAppointmentsCard();
-
-                    final visibleAppointments = pastAppointments.length > 3
-                        ? pastAppointments.sublist(0, 3)
-                        : pastAppointments;
-
+                    final visibleAppointments = pastAppointments.length > 3 ? pastAppointments.sublist(0, 3) : pastAppointments;
                     return ListView.separated(
                       shrinkWrap: true, physics: const NeverScrollableScrollPhysics(), padding: EdgeInsets.zero, itemCount: visibleAppointments.length,
                       separatorBuilder: (context, index) => const SizedBox(height: 12),
                       itemBuilder: (context, index) {
                         final Appointment appointment = visibleAppointments[index];
                         final String fileName = _appointmentRecordFileName(appointment.dateTime);
-
                         return GlassPanel(
                           padding: const EdgeInsets.all(16),
                           borderRadius: 16,
@@ -427,21 +322,15 @@ class _PatientProfileScreenState extends ConsumerState<PatientProfileScreen> {
                                           decoration: BoxDecoration(color: Colors.grey.shade100, borderRadius: BorderRadius.circular(8), border: Border.all(color: Colors.grey.shade300)),
                                           child: Row(
                                             mainAxisSize: MainAxisSize.min,
-                                            children: [
-                                              Icon(LucideIcons.clock, size: 14, color: Colors.grey.shade500),
-                                              const SizedBox(width: 6),
-                                              Text(DateFormat('EEE, MMM d, yyyy • h:mm a').format(appointment.dateTime), style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.grey.shade500)),
-                                            ],
+                                            children: [Icon(LucideIcons.clock, size: 14, color: Colors.grey.shade500), const SizedBox(width: 6), Text(DateFormat('EEE, MMM d, yyyy • h:mm a').format(appointment.dateTime), style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.grey.shade500))],
                                           ),
                                         ),
                                       ],
                                     ),
                                     const SizedBox(height: 12),
-
                                     InkWell(
                                       onTap: () async {
                                         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Row(children: [const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2)), const SizedBox(width: 12), Expanded(child: Text('Generating $fileName...', style: GoogleFonts.inter(fontWeight: FontWeight.w500)))]), backgroundColor: Colors.grey.shade800));
-
                                         try {
                                           final path = await ref.read(reportExportControllerProvider).exportAppointmentRecord(appointment, fileName, patientId: patient.id, patientName: patient.fullName);
                                           if (!context.mounted) return;
