@@ -293,61 +293,56 @@ class _PatientProfileScreenState extends ConsumerState<PatientProfileScreen> {
                   data: (pastAppointments) {
                     if (pastAppointments.isEmpty) return _buildEmptyAppointmentsCard();
                     final visibleAppointments = pastAppointments.length > 3 ? pastAppointments.sublist(0, 3) : pastAppointments;
+                    
                     return ListView.separated(
                       shrinkWrap: true, physics: const NeverScrollableScrollPhysics(), padding: EdgeInsets.zero, itemCount: visibleAppointments.length,
                       separatorBuilder: (context, index) => const SizedBox(height: 12),
                       itemBuilder: (context, index) {
                         final Appointment appointment = visibleAppointments[index];
                         final String fileName = _appointmentRecordFileName(appointment.dateTime);
+                        
                         return GlassPanel(
-                          padding: const EdgeInsets.all(16),
+                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                           borderRadius: 16,
                           child: Row(
-                            crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Container(padding: const EdgeInsets.all(12), decoration: BoxDecoration(color: Colors.grey.shade200, borderRadius: BorderRadius.circular(12)), child: Icon(LucideIcons.checkCircle, color: Colors.grey.shade500, size: 22)),
-                              const SizedBox(width: 16),
+                              Container(
+                                padding: const EdgeInsets.all(10), 
+                                decoration: BoxDecoration(color: Colors.grey.shade100, shape: BoxShape.circle), 
+                                child: Icon(LucideIcons.checkCircle, color: Colors.grey.shade400, size: 20)
+                              ),
+                              const SizedBox(width: 14),
                               Expanded(
                                 child: Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
-                                    Text(appointment.title, style: GoogleFonts.inter(fontWeight: FontWeight.bold, fontSize: 15, color: Colors.grey.shade600)),
-                                    const SizedBox(height: 4),
-                                    Text('Dr. ${appointment.doctorName} • ${appointment.location}', style: GoogleFonts.inter(color: Colors.grey.shade500, fontSize: 13)),
-                                    const SizedBox(height: 8),
-                                    Row(
-                                      children: [
-                                        Container(
-                                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                                          decoration: BoxDecoration(color: Colors.grey.shade100, borderRadius: BorderRadius.circular(8), border: Border.all(color: Colors.grey.shade300)),
-                                          child: Row(
-                                            mainAxisSize: MainAxisSize.min,
-                                            children: [Icon(LucideIcons.clock, size: 14, color: Colors.grey.shade500), const SizedBox(width: 6), Text(DateFormat('EEE, MMM d, yyyy • h:mm a').format(appointment.dateTime), style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.grey.shade500))],
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                    const SizedBox(height: 12),
-                                    InkWell(
-                                      onTap: () async {
-                                        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Row(children: [const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2)), const SizedBox(width: 12), Expanded(child: Text('Generating $fileName...', style: GoogleFonts.inter(fontWeight: FontWeight.w500)))]), backgroundColor: Colors.grey.shade800));
-                                        try {
-                                          final path = await ref.read(reportExportControllerProvider).exportAppointmentRecord(appointment, fileName, patientId: patient.id, patientName: patient.fullName);
-                                          if (!context.mounted) return;
-                                          ScaffoldMessenger.of(context).hideCurrentSnackBar();
-                                          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('✅ Saved to: $path', style: GoogleFonts.inter(fontWeight: FontWeight.bold, fontSize: 12)), backgroundColor: const Color(0xFF10B981), duration: const Duration(seconds: 6)));
-                                        } catch (e) {
-                                          if (!context.mounted) return;
-                                          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('❌ Error: $e'), backgroundColor: Colors.red));
-                                        }
-                                      },
-                                      borderRadius: BorderRadius.circular(8),
-                                      child: Container(
-                                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8), decoration: BoxDecoration(color: Colors.grey.shade100, borderRadius: BorderRadius.circular(8), border: Border.all(color: Colors.grey.shade300)),
-                                        child: Row(mainAxisSize: MainAxisSize.min, children: [Icon(LucideIcons.fileText, size: 16, color: Colors.grey.shade600), const SizedBox(width: 8), Flexible(child: Text(fileName, style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w600, color: Colors.grey.shade600), overflow: TextOverflow.ellipsis)), const SizedBox(width: 8), Icon(LucideIcons.downloadCloud, size: 16, color: Colors.grey.shade600)]),
-                                      ),
-                                    ),
+                                    Text(appointment.title, style: GoogleFonts.inter(fontWeight: FontWeight.bold, fontSize: 14, color: Colors.grey.shade700)),
+                                    const SizedBox(height: 2),
+                                    Text('Dr. ${appointment.doctorName} • ${appointment.location}', style: GoogleFonts.inter(color: Colors.grey.shade500, fontSize: 12), maxLines: 1, overflow: TextOverflow.ellipsis),
                                   ],
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Text(DateFormat('MMM d, h:mm a').format(appointment.dateTime), style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w600, color: Colors.grey.shade500)),
+                              const SizedBox(width: 8),
+                              InkWell(
+                                borderRadius: BorderRadius.circular(8),
+                                onTap: () async {
+                                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Row(children: [const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2)), const SizedBox(width: 12), Expanded(child: Text('Generating PDF...', style: GoogleFonts.inter(fontWeight: FontWeight.w500)))]), backgroundColor: Colors.grey.shade800));
+                                  try {
+                                    final path = await ref.read(reportExportControllerProvider).exportAppointmentRecord(appointment, fileName, patientId: patient.id, patientName: patient.fullName);
+                                    if (!context.mounted) return;
+                                    ScaffoldMessenger.of(context).hideCurrentSnackBar();
+                                    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('✅ Saved to: $path', style: GoogleFonts.inter(fontWeight: FontWeight.bold, fontSize: 12)), backgroundColor: const Color(0xFF10B981), duration: const Duration(seconds: 6)));
+                                  } catch (e) {
+                                    if (!context.mounted) return;
+                                    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('❌ Error: $e'), backgroundColor: Colors.red));
+                                  }
+                                },
+                                child: Container(
+                                  padding: const EdgeInsets.all(6),
+                                  decoration: BoxDecoration(border: Border.all(color: Colors.blue.shade200), borderRadius: BorderRadius.circular(8)),
+                                  child: const Icon(LucideIcons.download, color: Color(0xFF3B82F6), size: 16),
                                 ),
                               ),
                             ],

@@ -4,7 +4,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:intl/intl.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 import '../../../../core/widgets/glass_panel.dart';
 import '../../domain/entities/adherence_report_summary.dart';
@@ -24,16 +23,8 @@ import '../../../profile/domain/usecases/merge_live_overdue_doses.dart';
 import '../providers/patient_routine_provider.dart';
 import '../../domain/entities/routine_dose.dart';
 
-String _ordinal(int day) {
-  if (day >= 11 && day <= 13) return '${day}th';
-  switch (day % 10) {
-    case 1: return '${day}st';
-    case 2: return '${day}nd';
-    case 3: return '${day}rd';
-    default: return '${day}th';
-  }
-}
-
+// Uses the exact same label generator as the patient profile to ensure matching text
+// like "August 2026 Adherence Report (Up to Aug 5)"
 final _monthlyAdherenceProvider = FutureProvider.family<AdherenceReportData, ({String patientId, String patientName})>((ref, params) async {
   final now = DateTime.now();
   final lastMonth = DateTime(now.year, now.month - 1, 1);
@@ -66,7 +57,7 @@ final _monthlyAdherenceProvider = FutureProvider.family<AdherenceReportData, ({S
 
   return buildReport(
     logs: mergedLogs,
-    reportLabel: monthlyReportLabel(targetMonth),
+    reportLabel: adherenceReportLabelForMonth(targetMonth),
     patientName: params.patientName,
     expectedTotalDoses: expectedTotalDosesFor(schedule, daysInPeriod),
     dosesPerDay: schedule.length,
@@ -75,18 +66,6 @@ final _monthlyAdherenceProvider = FutureProvider.family<AdherenceReportData, ({S
     medicationSchedule: sortedMedicationSchedule(schedule),
   );
 });
-
-String monthlyReportLabel(DateTime targetMonth) {
-  final now = DateTime.now();
-  final monthLabel = DateFormat('MMMM yyyy').format(targetMonth);
-  if (targetMonth.year == now.year && targetMonth.month == now.month) {
-    final lastDayOfMonth = DateTime(now.year, now.month + 1, 0).day;
-    if (now.day < lastDayOfMonth) {
-      return '$monthLabel Adherence Report (up to ${_ordinal(now.day)})';
-    }
-  }
-  return '$monthLabel Adherence Report';
-}
 
 final _patientReportsProvider = FutureProvider.family<List<AdherenceReportSummary>, String>(
   (ref, patientId) => ref.read(getAdherenceReportsForPatientProvider).call(patientId),
@@ -166,6 +145,7 @@ class _PatientReportsSection extends ConsumerStatefulWidget {
 
 class _PatientReportsSectionState extends ConsumerState<_PatientReportsSection> {
   bool _isGenerating = false;
+  final Map<String, bool> _selectedReports = {};
 
   ({String patientId, String patientName}) get _monthlyKey => (patientId: widget.patientId, patientName: widget.patientName);
 
@@ -188,26 +168,66 @@ class _PatientReportsSectionState extends ConsumerState<_PatientReportsSection> 
     return DateTime.now();
   }
 
-  Future<void> _generateAndDownload() async {
-    setState(() => _isGenerating = true);
-    try {
-      final reportData = ref.read(_monthlyAdherenceProvider(_monthlyKey)).value;
-      if (reportData == null) return;
-      final targetMonth = reportData.periodStart;
-      final label = reportData.reportLabel;
+  void _downloadSelectedReports(List<DateTime> availableMonths) async {
+    final chosenLabels = _selectedReports.entries.where((e) => e.value).map((e) => e.key).toList();
 
-      await ref.read(reportExportControllerProvider).exportAdherenceReports(
-        patientId: widget.patientId, patientName: widget.patientName, chosenReports: [label], reportTargetMonths: {label: targetMonth},
+    if (chosenLabels.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Please select at least one report to export.'), backgroundColor: Colors.orange));
+      return;
+    }
+
+    setState(() => _isGenerating = true);
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Row(
+          children: [
+            const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2)),
+            const SizedBox(width: 12),
+            Expanded(child: Text('Querying database & generating exports...', style: GoogleFonts.inter(fontWeight: FontWeight.w500))),
+          ],
+        ),
+        backgroundColor: Colors.grey.shade800,
+        duration: const Duration(seconds: 4),
+      ),
+    );
+
+    try {
+      final reportExport = ref.read(reportExportControllerProvider);
+      
+      final Map<String, DateTime> targetMonths = {};
+      for (var month in availableMonths) {
+        targetMonths[adherenceReportLabelForMonth(month)] = month;
+      }
+
+      List<String> paths = await reportExport.exportAdherenceReports(
+        patientId: widget.patientId, patientName: widget.patientName, chosenReports: chosenLabels, reportTargetMonths: targetMonths,
       );
+
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Report downloaded and saved to your device.'), backgroundColor: Color(0xFF10B981)));
-      ref.invalidate(_monthlyAdherenceProvider(_monthlyKey));
+      ScaffoldMessenger.of(context).hideCurrentSnackBar();
+
+      for (String path in paths) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('✅ Saved to: $path', style: GoogleFonts.inter(fontWeight: FontWeight.bold, fontSize: 12)),
+            backgroundColor: const Color(0xFF10B981),
+            duration: const Duration(seconds: 6),
+          ),
+        );
+      }
       ref.invalidate(_patientReportsProvider(widget.patientId));
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Failed to generate report: $e'), backgroundColor: Colors.red));
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('❌ Error: $e'), backgroundColor: Colors.red));
     } finally {
-      if (mounted) setState(() => _isGenerating = false);
+      if (mounted) {
+        setState(() {
+          _isGenerating = false;
+          for (var key in _selectedReports.keys) {
+            _selectedReports[key] = false;
+          }
+        });
+      }
     }
   }
 
@@ -269,68 +289,54 @@ class _PatientReportsSectionState extends ConsumerState<_PatientReportsSection> 
               current = DateTime(current.year, current.month - 1, 1);
             }
 
+            final totalSelected = _selectedReports.values.where((v) => v).length;
+
             return Padding(
               padding: const EdgeInsets.only(bottom: 24),
               child: GlassPanel(
-                padding: const EdgeInsets.symmetric(vertical: 8),
+                padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
                 borderRadius: 18,
                 child: Column(
-                  children: months.map((month) {
-                    final label = adherenceReportLabelForMonth(month);
-                    final report = reports.cast<AdherenceReportSummary?>().firstWhere(
-                          (r) => r?.reportLabel == label,
-                          orElse: () => null,
-                        );
-
-                    return ListTile(
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
-                      title: Text(label, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Colors.black87)),
-                      subtitle: Text(
-                        report != null ? 'Generated ${DateFormat('MMM d, yyyy').format(report.generatedAt)}' : 'Detailed compliance metrics history export.',
-                        style: const TextStyle(fontSize: 11),
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Icon(LucideIcons.fileText, size: 16, color: Colors.blue.shade700),
+                        const SizedBox(width: 8),
+                        Text('Medication Adherence Logs', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Colors.grey.shade700)),
+                      ],
+                    ),
+                    const SizedBox(height: 10),
+                    ...months.map((month) {
+                      final label = adherenceReportLabelForMonth(month);
+                      return CheckboxListTile(
+                        title: Text(label, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Colors.black87)),
+                        subtitle: const Text('Detailed compliance metrics history export sheet.', style: TextStyle(fontSize: 11)),
+                        value: _selectedReports[label] ?? false,
+                        activeColor: const Color(0xFF0256B4),
+                        contentPadding: EdgeInsets.zero,
+                        dense: true,
+                        onChanged: (bool? value) {
+                          setState(() {
+                            _selectedReports[label] = value ?? false;
+                          });
+                        },
+                      );
+                    }),
+                    const SizedBox(height: 12),
+                    SizedBox(
+                      width: double.infinity, height: 44,
+                      child: OutlinedButton.icon(
+                        onPressed: _isGenerating ? null : () => _downloadSelectedReports(months),
+                        icon: _isGenerating ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2)) : const Icon(LucideIcons.download, size: 14),
+                        label: Text(
+                          _isGenerating ? 'Generating...' : (totalSelected > 0 ? 'Export Selected PDF ($totalSelected)' : 'Select Logs to Export'), 
+                          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)
+                        ),
+                        style: OutlinedButton.styleFrom(foregroundColor: const Color(0xFF0256B4), side: BorderSide(color: Colors.blue.shade200), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
                       ),
-                      trailing: report != null
-                        ? OutlinedButton.icon(
-                            onPressed: () async {
-                              final uri = Uri.tryParse(report.downloadUrl);
-                              if (uri != null && await canLaunchUrl(uri)) {
-                                await launchUrl(uri, mode: LaunchMode.externalApplication);
-                              }
-                            },
-                            icon: const Icon(LucideIcons.downloadCloud, size: 14),
-                            label: const Text('PDF', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11)),
-                            style: OutlinedButton.styleFrom(
-                              foregroundColor: const Color(0xFF10B981),
-                              side: const BorderSide(color: Color(0xFF10B981)),
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 0),
-                            ),
-                          )
-                        : TextButton(
-                            onPressed: () async {
-                              setState(() => _isGenerating = true);
-                              try {
-                                await ref.read(reportExportControllerProvider).exportAdherenceReports(
-                                  patientId: widget.patientId, patientName: widget.patientName, chosenReports: [label], reportTargetMonths: {label: month},
-                                );
-                                if (!mounted) return;
-                                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Report generated successfully.'), backgroundColor: Color(0xFF10B981)));
-                                ref.invalidate(_patientReportsProvider(widget.patientId));
-                              } catch (e) {
-                                if (!mounted) return;
-                                ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Failed to generate report: $e'), backgroundColor: Colors.red));
-                              } finally {
-                                if (mounted) setState(() => _isGenerating = false);
-                              }
-                            },
-                            style: TextButton.styleFrom(
-                              foregroundColor: const Color(0xFF0256B4),
-                              padding: const EdgeInsets.symmetric(horizontal: 12),
-                            ),
-                            child: const Text('Generate', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11)),
-                          ),
-                    );
-                  }).toList(),
+                    ),
+                  ],
                 ),
               ),
             );
@@ -455,8 +461,7 @@ class _PatientReportsSectionState extends ConsumerState<_PatientReportsSection> 
 
   Widget _buildMonthlySummaryCard() {
     final summaryAsync = ref.watch(_monthlyAdherenceProvider(_monthlyKey));
-    final now = DateTime.now();
-
+    
     return Padding(
       padding: const EdgeInsets.only(bottom: 18),
       child: GlassPanel(
@@ -480,9 +485,7 @@ class _PatientReportsSectionState extends ConsumerState<_PatientReportsSection> 
                       Text("Last Month's Medication Adherence", style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.bold, color: const Color(0xFF1E3A8A))),
                       summaryAsync.when(
                         data: (report) => Text(
-                          report.periodStart.year == now.year && report.periodStart.month == now.month 
-                            ? now.day < DateTime(now.year, now.month + 1, 0).day ? '${DateFormat('MMMM yyyy').format(now)} (up to ${_ordinal(now.day)})' : DateFormat('MMMM yyyy').format(now)
-                            : DateFormat('MMMM yyyy').format(report.periodStart),
+                          report.reportLabel, // Leverages the synced label dynamically generated.
                           style: GoogleFonts.inter(fontSize: 11, color: Colors.grey.shade500),
                         ),
                         loading: () => const SizedBox(), error: (_, __) => const SizedBox(),
@@ -544,22 +547,6 @@ class _PatientReportsSectionState extends ConsumerState<_PatientReportsSection> 
           ],
         ] else
           Padding(padding: const EdgeInsets.only(top: 12), child: Text('No doses logged for this patient this month yet.', style: GoogleFonts.inter(fontSize: 12, color: Colors.grey.shade500))),
-
-        const SizedBox(height: 14),
-        SizedBox(
-          width: double.infinity,
-          child: OutlinedButton.icon(
-            onPressed: _isGenerating ? null : () => _generateAndDownload(),
-            icon: _isGenerating ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2)) : const Icon(LucideIcons.download, size: 16),
-            label: Text(_isGenerating ? 'Generating...' : 'Download PDF Report', style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w600)),
-            style: OutlinedButton.styleFrom(
-              foregroundColor: const Color(0xFF0058BC),
-              side: const BorderSide(color: Color(0xFF0058BC)),
-              padding: const EdgeInsets.symmetric(vertical: 12),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-            ),
-          ),
-        ),
       ],
     );
   }
