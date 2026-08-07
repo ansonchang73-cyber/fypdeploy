@@ -4,12 +4,15 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:google_fonts/google_fonts.dart';
 
+import '../../../../core/providers/clock_ticker_provider.dart';
 import '../../../../core/widgets/glass_panel.dart';
 import '../../domain/entities/linked_patient_summary.dart';
 import '../providers/caregiver_dashboard_providers.dart';
 import '../providers/patient_routine_provider.dart';
 import 'adherence_ring.dart';
 import '../../../medication_management/presentation/screens/add_medication_screen.dart';
+import '../../../system_health/domain/entities/scheduled_dose.dart';
+import '../../../system_health/domain/usecases/classify_daily_schedule.dart';
 import '../../../system_health/presentation/providers/system_health_providers.dart';
 import '../../../medication_management/presentation/providers/medication_management_providers.dart';
 import '../../domain/entities/routine_dose.dart';
@@ -24,28 +27,35 @@ class PatientHomeCard extends ConsumerStatefulWidget {
 }
 
 class _PatientHomeCardState extends ConsumerState<PatientHomeCard> {
-  String? _promptedDoseId;
+  // Doses we've already popped a dialog for this session — a Set rather
+  // than a single id, since a caregiver checking in later may find
+  // several separate doses that have each crossed the 60-minute
+  // unresolved mark, and each one deserves its own one-time alert (the
+  // old single-id version got permanently stuck after the first).
+  final Set<String> _alertedDoseIds = {};
 
-  DateTime _parseTime(String timeStr) {
-    try {
-      final cleanTime = timeStr.toUpperCase().trim();
-      final isPM = cleanTime.contains('PM');
-      final isAM = cleanTime.contains('AM');
-      final rawTimeStr = cleanTime.replaceAll(RegExp(r'[A-Z\s]'), '');
-      final parts = rawTimeStr.split(':');
-      if (parts.isNotEmpty) {
-        int hour = int.parse(parts[0].trim());
-        final int minute = parts.length > 1 ? int.parse(parts[1].trim()) : 0;
-        if (isPM && hour < 12) hour += 12;
-        if (isAM && hour == 12) hour = 0;
-        final now = DateTime.now();
-        return DateTime(now.year, now.month, now.day, hour, minute);
-      }
-    } catch (_) {}
-    return DateTime.now();
+  List<ScheduledDose> _toScheduledDoses(List<RoutineDose> doses) {
+    return doses
+        .map(
+          (d) => ScheduledDose(
+            id: d.id,
+            name: d.name,
+            dosage: d.dosage,
+            time: d.time,
+            isCompleted: d.isCompleted,
+            isMarkedMissed: d.isMarkedMissed,
+          ),
+        )
+        .toList();
   }
 
-  void _showCaregiverPromptDialog(BuildContext context, RoutineDose dose) {
+  // Same "Critical Schedule Delay" dialog the patient sees on their own
+  // device (see `today_schedule_section.dart`) — reused here rather than
+  // a separate caregiver-only design, just with caregiver-appropriate
+  // copy and no "Remind Me Again" (there's no one left to remind; by the
+  // time this fires the patient's own 15/30-minute reminder window has
+  // already closed).
+  void _showCaregiverAlertDialog(BuildContext context, ScheduledDose dose) {
     showDialog(
       context: context,
       barrierDismissible: false,
@@ -55,9 +65,14 @@ class _PatientHomeCardState extends ConsumerState<PatientHomeCard> {
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
           title: Row(
             children: [
-              const Icon(LucideIcons.alertOctagon, color: Color(0xFFF59E0B), size: 28),
+              const Icon(LucideIcons.alertOctagon, color: Color(0xFFEF4444), size: 28),
               const SizedBox(width: 12),
-              Text('Critical Schedule Delay', style: GoogleFonts.inter(fontSize: 18, fontWeight: FontWeight.bold, color: const Color(0xFF1E3A8A))),
+              Expanded(
+                child: Text(
+                  'Critical Schedule Delay',
+                  style: GoogleFonts.inter(fontSize: 18, fontWeight: FontWeight.bold, color: const Color(0xFF1E3A8A)),
+                ),
+              ),
             ],
           ),
           content: Column(
@@ -65,7 +80,7 @@ class _PatientHomeCardState extends ConsumerState<PatientHomeCard> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                'The scheduled window for ${dose.name} (${dose.time}) has been exceeded by more than 15 minutes.',
+                '${widget.patient.fullName}\'s scheduled window for ${dose.name} (${dose.time}) has been exceeded by more than 60 minutes with no response.',
                 style: GoogleFonts.inter(fontSize: 14, color: Colors.grey.shade700, height: 1.4),
               ),
               const SizedBox(height: 16),
@@ -102,6 +117,9 @@ class _PatientHomeCardState extends ConsumerState<PatientHomeCard> {
   @override
   Widget build(BuildContext context) {
     final routineAsync = ref.watch(patientRoutineProvider(widget.patient.id));
+    // Forces a rebuild every 30s so a dose crossing the 60-minute mark
+    // gets caught even if nothing in Firestore changes in the meantime.
+    ref.watch(clockTickerProvider);
 
     return GlassPanel(
       padding: const EdgeInsets.all(20),
@@ -150,62 +168,34 @@ class _PatientHomeCardState extends ConsumerState<PatientHomeCard> {
               child: Text('Failed to load routine: $err', style: GoogleFonts.inter(color: Colors.red.shade700, fontSize: 12)),
             ),
             data: (doses) {
-              final now = DateTime.now();
-              final List<RoutineDose> delayedDoses = [];
+              // Same classification the patient's own "Today's Schedule"
+              // uses — one source of truth for what counts as delayed vs.
+              // missed, instead of a second, separately-maintained copy
+              // of the "how late is this" math living here.
+              final classified = const ClassifyDailySchedule().call(_toScheduledDoses(doses), DateTime.now());
 
-              for (final dose in doses) {
-                if (dose.isCompleted || dose.isMarkedMissed) continue;
-                final doseTime = _parseTime(dose.time);
-                final minutesLate = now.difference(doseTime).inMinutes;
-                
-                if (minutesLate > 15) {
-                  delayedDoses.add(dose);
-                  if (minutesLate <= 60 && _promptedDoseId != dose.id) {
-                    WidgetsBinding.instance.addPostFrameCallback((_) {
-                      if (!mounted) return;
-                      setState(() => _promptedDoseId = dose.id);
-                      _showCaregiverPromptDialog(context, dose);
-                    });
-                  }
-                }
+              // Notify the caregiver (this screen) only once a dose has
+              // crossed the 60-minute unresolved mark — the patient's own
+              // 15-minute and 30-minute reminders have already had their
+              // chance by then. Only one dialog on screen at a time; the
+              // next unresolved dose (if any) surfaces on the next
+              // rebuild once this one is resolved.
+              for (final c in classified.classifiedDoses) {
+                if (!c.requiresCaregiverAlert) continue;
+                if (_alertedDoseIds.contains(c.dose.id)) continue;
+
+                _alertedDoseIds.add(c.dose.id);
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  if (!mounted) return;
+                  _showCaregiverAlertDialog(context, c.dose);
+                });
+                break;
               }
 
               final percentage = ref.watch(computeDailyAdherencePercentageProvider).call(doses);
 
               return Column(
                 children: [
-                  if (delayedDoses.isNotEmpty)
-                    Container(
-                      margin: const EdgeInsets.only(bottom: 20),
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFFEF3C7),
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: const Color(0xFFFCD34D)),
-                      ),
-                      child: Row(
-                        children: [
-                          const Icon(LucideIcons.clock, color: Color(0xFFD97706), size: 20),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: delayedDoses.map((d) {
-                                final delayMins = now.difference(_parseTime(d.time)).inMinutes;
-                                return Text(
-                                  '${d.name} is $delayMins min overdue',
-                                  style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.bold, color: const Color(0xFF92400E)),
-                                );
-                              }).toList(),
-                            ),
-                          ),
-                          TextButton(
-                            onPressed: () {}, 
-                            child: Text('Check', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.bold, color: const Color(0xFFD97706))),
-                          ),
-                        ],
-                      ),
-                    ),
                   Center(child: AdherenceRing(percentage: percentage)),
                   const SizedBox(height: 20),
                   Align(

@@ -118,12 +118,28 @@ class ClassifyDailySchedule {
         dose.id == activeEligibleDoseId &&
         !dose.isMarkedMissed;
 
+    // Reminder escalation ladder — see [ReminderStage]. 15/30/60 minutes
+    // are the only boundaries that matter here; everything else (which
+    // dose is "active", whether a dialog has already been shown this
+    // session) is the presentation layer's job.
+    ReminderStage reminderStage;
+    if (dose.isCompleted || dose.isMarkedMissed) {
+      reminderStage = ReminderStage.none;
+    } else if (tier == DoseStatusTier.delayed) {
+      reminderStage = minutesLate < 30 ? ReminderStage.first : ReminderStage.second;
+    } else if (tier == DoseStatusTier.missed) {
+      reminderStage = ReminderStage.caregiverAlert;
+    } else {
+      reminderStage = ReminderStage.none;
+    }
+
     return ClassifiedDose(
       dose: dose,
       tier: tier,
       minutesLate: minutesLate,
       isActionable: isActionable,
       requiresCaregiverPrompt: requiresCaregiverPrompt,
+      reminderStage: reminderStage,
     );
   }
 

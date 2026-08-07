@@ -52,6 +52,20 @@ enum DoseStatusTier {
   missed,
 }
 
+/// Where a still-open (not taken, not marked missed) dose sits in the
+/// reminder escalation ladder:
+///
+///  - `none`: not currently due for a reminder (on time, upcoming, or
+///    already resolved).
+///  - `first`: 15–29 minutes late — ask the patient (Taken Late / Missed
+///    / Remind Me Again).
+///  - `second`: 30–59 minutes late — the second reminder, if the first
+///    one was dismissed with "Remind Me Again" (or just never answered).
+///  - `caregiverAlert`: 60+ minutes late and still unresolved — the
+///    patient prompt window has closed (the dose is now locked/"missed"),
+///    and a linked caregiver should be notified instead.
+enum ReminderStage { none, first, second, caregiverAlert }
+
 class ClassifiedDose {
   final ScheduledDose dose;
   final DoseStatusTier tier;
@@ -69,13 +83,30 @@ class ClassifiedDose {
   /// lives here now instead of inline in the widget tree.
   final bool requiresCaregiverPrompt;
 
+  /// Reminder escalation stage for this dose right now — see
+  /// [ReminderStage]. Callers that only care about "should I show/re-show
+  /// the patient dialog right now" should prefer this over re-deriving it
+  /// from [minutesLate] themselves, so the 15/30/60-minute boundaries live
+  /// in exactly one place.
+  final ReminderStage reminderStage;
+
   const ClassifiedDose({
     required this.dose,
     required this.tier,
     required this.minutesLate,
     required this.isActionable,
     required this.requiresCaregiverPrompt,
+    required this.reminderStage,
   });
 
   bool get isMissed => tier == DoseStatusTier.missed;
+
+  /// True when this dose has crossed the 60-minute mark without being
+  /// resolved by the patient — the "notify the caregiver" trigger.
+  /// Deliberately independent of `activeEligibleDoseId`: unlike the
+  /// patient prompt (only ever one dose "due" at a time), a caregiver
+  /// checking in later may find several doses that separately crossed
+  /// this line, and should be able to learn about each of them.
+  bool get requiresCaregiverAlert =>
+      tier == DoseStatusTier.missed && !dose.isMarkedMissed && !dose.isCompleted;
 }
