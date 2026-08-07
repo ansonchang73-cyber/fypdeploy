@@ -76,9 +76,6 @@ class TodayScheduleSection extends ConsumerWidget {
                   final classified = visibleDoses[index];
                   return _InteractiveMedicationItem(
                     classified: classified,
-                    onTakeMedication: () {
-                      ref.read(timelineProvider.notifier).markAsTaken(classified.dose.id);
-                    },
                   );
                 },
               ),
@@ -155,62 +152,58 @@ class TodayScheduleSection extends ConsumerWidget {
 }
 
 class _InteractiveMedicationItem extends StatelessWidget {
-  const _InteractiveMedicationItem({required this.classified, required this.onTakeMedication});
+  const _InteractiveMedicationItem({required this.classified});
 
   final ClassifiedDose classified;
-  final VoidCallback onTakeMedication;
 
   @override
   Widget build(BuildContext context) {
     final visual = _visualFor(classified);
     final dose = classified.dose;
 
-    return IgnorePointer(
-      ignoring: classified.isMissed || (!classified.isActionable && classified.tier != DoseStatusTier.compliant),
-      child: Opacity(
-        opacity: classified.isMissed ? 0.6 : 1.0,
-        child: InkWell(
-          onTap: classified.isActionable ? onTakeMedication : null,
-          borderRadius: BorderRadius.circular(20),
-          child: GlassPanel(
-            padding: const EdgeInsets.all(16),
-            borderRadius: 20,
-            child: Row(
+    return Opacity(
+      opacity: classified.isMissed ? 0.6 : 1.0,
+      child: GlassPanel(
+        padding: const EdgeInsets.all(16),
+        borderRadius: 20,
+        child: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(color: visual.color.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(14)),
+              child: Icon(visual.icon, color: visual.color, size: 24),
+            ),
+            const SizedBox(width: 16),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(visual.label, style: GoogleFonts.inter(fontSize: 11, color: visual.color, fontWeight: FontWeight.bold, letterSpacing: 0.5)),
+                  const SizedBox(height: 2),
+                  Text(dose.name, style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.black87)),
+                  Text(dose.dosage, style: GoogleFonts.inter(fontSize: 13, color: Colors.grey.shade600)),
+                ],
+              ),
+            ),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.end,
               children: [
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(color: visual.color.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(14)),
-                  child: Icon(visual.icon, color: visual.color, size: 24),
-                ),
-                const SizedBox(width: 16),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(visual.label, style: GoogleFonts.inter(fontSize: 11, color: visual.color, fontWeight: FontWeight.bold, letterSpacing: 0.5)),
-                      const SizedBox(height: 2),
-                      Text(dose.name, style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.black87)),
-                      Text(dose.dosage, style: GoogleFonts.inter(fontSize: 13, color: Colors.grey.shade600)),
-                    ],
-                  ),
-                ),
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    if (classified.isActionable)
-                      const Icon(LucideIcons.playCircle, size: 20, color: Color(0xFF0058BC))
-                    else
-                      Icon(LucideIcons.alarmClock, size: 16, color: visual.color.withValues(alpha: 0.6)),
-                    const SizedBox(height: 4),
-                    Text(
-                      dose.time,
-                      style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.w900, color: classified.isMissed ? const Color(0xFFB91C1C) : visual.color),
-                    ),
-                  ],
+                if (classified.isActionable)
+                  const Icon(LucideIcons.unlock, size: 20, color: Color(0xFF0058BC))
+                else if (classified.tier == DoseStatusTier.compliant)
+                  const Icon(LucideIcons.checkCircle2, size: 20, color: Color(0xFF10B981))
+                else if (classified.isMissed)
+                  const Icon(LucideIcons.lock, size: 20, color: Color(0xFFEF4444))
+                else
+                  Icon(LucideIcons.clock, size: 16, color: visual.color.withValues(alpha: 0.6)),
+                const SizedBox(height: 4),
+                Text(
+                  dose.time,
+                  style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.w900, color: classified.isMissed ? const Color(0xFFB91C1C) : visual.color),
                 ),
               ],
             ),
-          ),
+          ],
         ),
       ),
     );
