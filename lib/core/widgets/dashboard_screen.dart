@@ -8,6 +8,7 @@ import '../../features/system_health/presentation/screens/system_health_screen.d
 import '../../features/profile/presentation/screens/patient_profile_screen.dart';
 import '../../features/adherence_analytics/presentation/screens/adherence_analytics_screen.dart';
 import '../../features/system_health/presentation/screens/system_health_screen.dart';
+import 'synchro_ai_top_bar.dart'; // add this import
 
 // StateProvider to track the active bottom navigation tab.
 // `.autoDispose` matters here: without it, this is a plain global provider
@@ -36,6 +37,7 @@ class MainDashboardScreen extends ConsumerWidget {
     ];
 
     return Scaffold(
+      appBar: const SynchroAiTopBar(),   // add this line
       backgroundColor: const Color(0xFFfaf9fe), // Design system surface color
       // IndexedStack preserves the scrolling state of your forms and lists
       body: IndexedStack(index: currentIndex, children: screens),
