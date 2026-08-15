@@ -4,20 +4,51 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../constants/app_colors.dart';
 import '../providers/synchro_ai_provider.dart';
-import 'glass_panel.dart';
 
 /// The persistent "Synchro AI" bar. Pass it as a Scaffold's `appBar` and
-/// it stays pinned across every tab of that Scaffold (e.g. all four tabs
-/// in MainDashboardScreen, since they share one Scaffold via
-/// IndexedStack). Tap it to open the chat sheet.
-class SynchroAiTopBar extends ConsumerWidget implements PreferredSizeWidget {
+/// it stays pinned across every tab of that Scaffold. Wire it into BOTH
+/// MainDashboardScreen and CaregiverDashboardShell (same one line in
+/// each: `appBar: const SynchroAiTopBar(),`) so it actually shows up
+/// throughout the whole app, not just one role's dashboard.
+///
+/// Deliberately bold/high-contrast (solid gradient + a slow pulsing
+/// glow) rather than a subtle glass pill — the whole point is that it
+/// shouldn't blend in.
+class SynchroAiTopBar extends ConsumerStatefulWidget implements PreferredSizeWidget {
   const SynchroAiTopBar({super.key});
 
+  // A bit of headroom above the ~76px the content actually needs, so it
+  // won't overflow on devices with a taller safe-area inset (notches,
+  // installed-PWA status bars). Bump this further if you ever see an
+  // overflow warning on a specific device.
   @override
-  Size get preferredSize => const Size.fromHeight(64);
+  Size get preferredSize => const Size.fromHeight(88);
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<SynchroAiTopBar> createState() => _SynchroAiTopBarState();
+}
+
+class _SynchroAiTopBarState extends ConsumerState<SynchroAiTopBar>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _pulseController;
+
+  @override
+  void initState() {
+    super.initState();
+    _pulseController = AnimationController(
+      vsync: this,
+      duration: const Duration(seconds: 2),
+    )..repeat(reverse: true);
+  }
+
+  @override
+  void dispose() {
+    _pulseController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final aiState = ref.watch(synchroAiControllerProvider);
 
     // Show the reminder confirmation once, right when it arrives, then
@@ -40,52 +71,75 @@ class SynchroAiTopBar extends ConsumerWidget implements PreferredSizeWidget {
     });
 
     return PreferredSize(
-      preferredSize: preferredSize,
+      preferredSize: widget.preferredSize,
       child: SafeArea(
         child: Padding(
-          padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+          padding: const EdgeInsets.fromLTRB(16, 10, 16, 6),
           child: GestureDetector(
             onTap: () => _openChatSheet(context),
-            child: SizedBox(
-              height: 48,
-              child: GlassPanel(
-                borderRadius: 24,
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                child: Row(
-                  children: [
-                    Container(
-                      width: 28,
-                      height: 28,
-                      decoration: const BoxDecoration(
-                        color: AppColors.primaryBlue,
-                        shape: BoxShape.circle,
-                      ),
-                      child: const Icon(
-                        LucideIcons.sparkles,
-                        size: 16,
-                        color: Colors.white,
-                      ),
+            child: AnimatedBuilder(
+              animation: _pulseController,
+              builder: (context, child) {
+                final glow = 0.30 + (_pulseController.value * 0.20);
+                return Container(
+                  height: 60,
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(20),
+                    gradient: const LinearGradient(
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                      colors: [AppColors.primaryBlue, Color(0xFF123E91)],
                     ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Text(
-                        aiState.isLoading ? 'Thinking…' : aiState.lastReply,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          fontSize: 13,
-                          color: AppColors.textPrimary,
-                          fontWeight: FontWeight.w500,
+                    boxShadow: [
+                      BoxShadow(
+                        color: AppColors.primaryBlue.withValues(alpha: glow),
+                        blurRadius: 22,
+                        spreadRadius: 1,
+                        offset: const Offset(0, 8),
+                      ),
+                    ],
+                  ),
+                  child: child,
+                );
+              },
+              child: Row(
+                children: [
+                  Container(
+                    width: 34,
+                    height: 34,
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.18),
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(LucideIcons.sparkles, size: 18, color: Colors.white),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        const Text(
+                          'Synchro AI',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w700,
+                            fontSize: 14,
+                          ),
                         ),
-                      ),
+                        const SizedBox(height: 2),
+                        Text(
+                          aiState.isLoading ? 'Thinking…' : aiState.lastReply,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(color: Colors.white70, fontSize: 12),
+                        ),
+                      ],
                     ),
-                    const Icon(
-                      LucideIcons.chevronRight,
-                      size: 16,
-                      color: AppColors.textSecondary,
-                    ),
-                  ],
-                ),
+                  ),
+                  const Icon(LucideIcons.chevronRight, size: 18, color: Colors.white70),
+                ],
               ),
             ),
           ),
@@ -104,23 +158,27 @@ class SynchroAiTopBar extends ConsumerWidget implements PreferredSizeWidget {
   }
 }
 
+const _kQuickSuggestions = [
+  "What's on my schedule today?",
+  'Remind me to take my medication',
+  "How's my adherence this week?",
+  'How do I add a new medication?',
+];
+
 class _SynchroAiChatSheet extends ConsumerStatefulWidget {
   const _SynchroAiChatSheet();
 
   @override
-  ConsumerState<_SynchroAiChatSheet> createState() =>
-      _SynchroAiChatSheetState();
+  ConsumerState<_SynchroAiChatSheet> createState() => _SynchroAiChatSheetState();
 }
 
 class _SynchroAiChatSheetState extends ConsumerState<_SynchroAiChatSheet> {
   final _controller = TextEditingController();
   final _scrollController = ScrollController();
 
-  void _send() {
-    final text = _controller.text;
+  void _sendText(String text) {
     if (text.trim().isEmpty) return;
     ref.read(synchroAiControllerProvider.notifier).send(text);
-    _controller.clear();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (_scrollController.hasClients) {
         _scrollController.animateTo(
@@ -132,11 +190,59 @@ class _SynchroAiChatSheetState extends ConsumerState<_SynchroAiChatSheet> {
     });
   }
 
+  void _sendFromField() {
+    final text = _controller.text;
+    _sendText(text);
+    _controller.clear();
+  }
+
   @override
   void dispose() {
     _controller.dispose();
     _scrollController.dispose();
     super.dispose();
+  }
+
+  Widget _buildSuggestions() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      child: Column(
+        children: [
+          const Text(
+            'Ask how SynchroM works, or try one of these:',
+            textAlign: TextAlign.center,
+            style: TextStyle(color: AppColors.textSecondary, fontSize: 13),
+          ),
+          const SizedBox(height: 16),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            alignment: WrapAlignment.center,
+            children: _kQuickSuggestions.map((s) {
+              return GestureDetector(
+                onTap: () => _sendText(s),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(color: AppColors.borderLight),
+                  ),
+                  child: Text(
+                    s,
+                    style: const TextStyle(
+                      fontSize: 13,
+                      color: AppColors.primaryBlue,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              );
+            }).toList(),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -170,49 +276,30 @@ class _SynchroAiChatSheetState extends ConsumerState<_SynchroAiChatSheet> {
             const SizedBox(height: 8),
             Expanded(
               child: aiState.history.isEmpty
-                  ? const Center(
-                      child: Padding(
-                        padding: EdgeInsets.symmetric(horizontal: 32),
-                        child: Text(
-                          "Ask how SynchroM works, or say something like "
-                          '"remind me to take Metformin at 8am".',
-                          textAlign: TextAlign.center,
-                          style: TextStyle(color: AppColors.textSecondary),
-                        ),
-                      ),
-                    )
+                  ? Center(child: SingleChildScrollView(child: _buildSuggestions()))
                   : ListView.builder(
                       controller: _scrollController,
-                      padding:
-                          const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                       itemCount: aiState.history.length,
                       itemBuilder: (context, index) {
                         final turn = aiState.history[index];
                         final isUser = turn.role == 'user';
                         return Align(
-                          alignment: isUser
-                              ? Alignment.centerRight
-                              : Alignment.centerLeft,
+                          alignment: isUser ? Alignment.centerRight : Alignment.centerLeft,
                           child: Container(
                             margin: const EdgeInsets.symmetric(vertical: 4),
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 14,
-                              vertical: 10,
-                            ),
+                            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                             constraints: BoxConstraints(
                               maxWidth: MediaQuery.of(context).size.width * 0.75,
                             ),
                             decoration: BoxDecoration(
-                              color: isUser
-                                  ? AppColors.primaryBlue
-                                  : Colors.white,
+                              color: isUser ? AppColors.primaryBlue : Colors.white,
                               borderRadius: BorderRadius.circular(16),
                             ),
                             child: Text(
                               turn.content,
                               style: TextStyle(
-                                color:
-                                    isUser ? Colors.white : AppColors.textPrimary,
+                                color: isUser ? Colors.white : AppColors.textPrimary,
                                 fontSize: 14,
                               ),
                             ),
@@ -226,10 +313,7 @@ class _SynchroAiChatSheetState extends ConsumerState<_SynchroAiChatSheet> {
                 padding: const EdgeInsets.symmetric(horizontal: 16),
                 child: Text(
                   aiState.error!,
-                  style: const TextStyle(
-                    color: AppColors.criticalRed,
-                    fontSize: 12,
-                  ),
+                  style: const TextStyle(color: AppColors.criticalRed, fontSize: 12),
                 ),
               ),
             Padding(
@@ -239,15 +323,13 @@ class _SynchroAiChatSheetState extends ConsumerState<_SynchroAiChatSheet> {
                   Expanded(
                     child: TextField(
                       controller: _controller,
-                      onSubmitted: (_) => _send(),
+                      onSubmitted: (_) => _sendFromField(),
                       decoration: InputDecoration(
                         hintText: 'Ask Synchro AI…',
                         filled: true,
                         fillColor: Colors.white,
-                        contentPadding: const EdgeInsets.symmetric(
-                          horizontal: 16,
-                          vertical: 12,
-                        ),
+                        contentPadding:
+                            const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                         border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(24),
                           borderSide: BorderSide(color: AppColors.borderLight),
@@ -258,8 +340,7 @@ class _SynchroAiChatSheetState extends ConsumerState<_SynchroAiChatSheet> {
                         ),
                         focusedBorder: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(24),
-                          borderSide:
-                              const BorderSide(color: AppColors.primaryBlue, width: 2),
+                          borderSide: const BorderSide(color: AppColors.primaryBlue, width: 2),
                         ),
                       ),
                     ),
@@ -275,7 +356,7 @@ class _SynchroAiChatSheetState extends ConsumerState<_SynchroAiChatSheet> {
                           ),
                         )
                       : GestureDetector(
-                          onTap: _send,
+                          onTap: _sendFromField,
                           child: Container(
                             width: 40,
                             height: 40,
@@ -283,11 +364,7 @@ class _SynchroAiChatSheetState extends ConsumerState<_SynchroAiChatSheet> {
                               color: AppColors.primaryBlue,
                               shape: BoxShape.circle,
                             ),
-                            child: const Icon(
-                              LucideIcons.send,
-                              size: 18,
-                              color: Colors.white,
-                            ),
+                            child: const Icon(LucideIcons.send, size: 18, color: Colors.white),
                           ),
                         ),
                 ],
