@@ -8,7 +8,7 @@ import '../services/synchro_ai_service.dart';
 /// unchanged on your Vercel preview and production URLs.
 final synchroAiServiceProvider = Provider<SynchroAiService>((ref) {
   return SynchroAiService(
-    baseUrl: Uri.base.origin,
+    baseUrl: 'https://synchrom.vercel.app',
     // sharedToken: 'put-the-same-value-as-SYNCHRO_AI_SHARED_SECRET-here',
   );
 });
