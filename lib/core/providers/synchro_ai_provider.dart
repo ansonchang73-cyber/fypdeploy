@@ -3,8 +3,8 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../services/synchro_ai_service.dart';
-
-// If you have providers for medications or adherence, import them here.
+import '../../features/medication_management/providers/timeline_provider.dart'; // <--- Added import
+import '../../features/medication_management/domain/entities/medication_task.dart'; // <--- Added import
 
 final synchroAiServiceProvider = Provider<SynchroAiService>((ref) {
   return SynchroAiService(
@@ -12,40 +12,7 @@ final synchroAiServiceProvider = Provider<SynchroAiService>((ref) {
   );
 });
 
-class SynchroAiState {
-  final List<SynchroChatTurn> history;
-  final String lastReply;
-  final bool isLoading;
-  final SynchroReminderAction? pendingAction;
-  final String? error;
-
-  const SynchroAiState({
-    this.history = const [],
-    this.lastReply = "Hi, I'm Synchro AI. Ask me anything or set a reminder.",
-    this.isLoading = false,
-    this.pendingAction,
-    this.error,
-  });
-
-  SynchroAiState copyWith({
-    List<SynchroChatTurn>? history,
-    String? lastReply,
-    bool? isLoading,
-    SynchroReminderAction? pendingAction,
-    bool clearPendingAction = false,
-    String? error,
-    bool clearError = false,
-  }) {
-    return SynchroAiState(
-      history: history ?? this.history,
-      lastReply: lastReply ?? this.lastReply,
-      isLoading: isLoading ?? this.isLoading,
-      pendingAction:
-          clearPendingAction ? null : (pendingAction ?? this.pendingAction),
-      error: clearError ? null : (error ?? this.error),
-    );
-  }
-}
+// ... [Keep your SynchroAiState class exactly as it is] ...
 
 class SynchroAiController extends Notifier<SynchroAiState> {
   @override
@@ -67,17 +34,30 @@ class SynchroAiController extends Notifier<SynchroAiState> {
 
     try {
       final user = FirebaseAuth.instance.currentUser;
+      
+      // 1. Read the REAL schedule data from your existing timelineProvider
+      final scheduleAsync = ref.read(timelineProvider);
+      
+      // 2. Format the real data into a simple list the AI can read
+      List<Map<String, String>> formattedSchedule = [];
+      
+      if (scheduleAsync.hasValue && scheduleAsync.value != null) {
+        final List<MedicationTask> rawSchedule = List<MedicationTask>.from(scheduleAsync.value!);
+        
+        for (var task in rawSchedule) {
+          formattedSchedule.add({
+            'medication': task.name,
+            'time': task.time,
+            'frequency': task.frequency,
+          });
+        }
+      }
 
-      // Build context payload from Firebase / current state
+      // 3. Package it into the payload
       final Map<String, dynamic> patientContext = {
         'userId': user?.uid ?? 'guest',
         'displayName': user?.displayName ?? 'Patient',
-        // Example: Add live data from your existing Riverpod providers / Firestore
-        'todaySchedule': [
-          {'medication': 'Metformin', 'dose': '500mg', 'time': '08:00 AM', 'status': 'taken'},
-          {'medication': 'Lisinopril', 'dose': '10mg', 'time': '08:00 PM', 'status': 'pending'},
-        ],
-        'weeklyAdherenceRate': '92%',
+        'todaySchedule': formattedSchedule.isNotEmpty ? formattedSchedule : 'No medications scheduled today.',
       };
 
       final response = await service.send(
