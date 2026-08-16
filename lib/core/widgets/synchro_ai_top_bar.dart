@@ -5,22 +5,9 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../constants/app_colors.dart';
 import '../providers/synchro_ai_provider.dart';
 
-/// The persistent "Synchro AI" bar. Pass it as a Scaffold's `appBar` and
-/// it stays pinned across every tab of that Scaffold. Wire it into BOTH
-/// MainDashboardScreen and CaregiverDashboardShell (same one line in
-/// each: `appBar: const SynchroAiTopBar(),`) so it actually shows up
-/// throughout the whole app, not just one role's dashboard.
-///
-/// Deliberately bold/high-contrast (solid gradient + a slow pulsing
-/// glow) rather than a subtle glass pill — the whole point is that it
-/// shouldn't blend in.
 class SynchroAiTopBar extends ConsumerStatefulWidget implements PreferredSizeWidget {
   const SynchroAiTopBar({super.key});
 
-  // A bit of headroom above the ~76px the content actually needs, so it
-  // won't overflow on devices with a taller safe-area inset (notches,
-  // installed-PWA status bars). Bump this further if you ever see an
-  // overflow warning on a specific device.
   @override
   Size get preferredSize => const Size.fromHeight(88);
 
@@ -31,6 +18,7 @@ class SynchroAiTopBar extends ConsumerStatefulWidget implements PreferredSizeWid
 class _SynchroAiTopBarState extends ConsumerState<SynchroAiTopBar>
     with SingleTickerProviderStateMixin {
   late final AnimationController _pulseController;
+  late final Animation<double> _smoothPulse; // Added for smoother easing
 
   @override
   void initState() {
@@ -39,6 +27,12 @@ class _SynchroAiTopBarState extends ConsumerState<SynchroAiTopBar>
       vsync: this,
       duration: const Duration(seconds: 2),
     )..repeat(reverse: true);
+    
+    // Applies an ease-in-out curve so the animation doesn't sharply reverse direction
+    _smoothPulse = CurvedAnimation(
+      parent: _pulseController,
+      curve: Curves.easeInOut,
+    );
   }
 
   @override
@@ -51,8 +45,6 @@ class _SynchroAiTopBarState extends ConsumerState<SynchroAiTopBar>
   Widget build(BuildContext context) {
     final aiState = ref.watch(synchroAiControllerProvider);
 
-    // Show the reminder confirmation once, right when it arrives, then
-    // clear it so it doesn't re-fire on the next rebuild.
     ref.listen(synchroAiControllerProvider, (previous, next) {
       final action = next.pendingAction;
       if (action != null && previous?.pendingAction != action) {
@@ -78,29 +70,34 @@ class _SynchroAiTopBarState extends ConsumerState<SynchroAiTopBar>
           child: GestureDetector(
             onTap: () => _openChatSheet(context),
             child: AnimatedBuilder(
-              animation: _pulseController,
+              animation: _smoothPulse, // Using the smoothed curve
               builder: (context, child) {
-                final glow = 0.30 + (_pulseController.value * 0.20);
-                return Container(
-                  height: 60,
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(20),
-                    gradient: const LinearGradient(
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                      colors: [AppColors.primaryBlue, Color(0xFF123E91)],
-                    ),
-                    boxShadow: [
-                      BoxShadow(
-                        color: AppColors.primaryBlue.withValues(alpha: glow),
-                        blurRadius: 22,
-                        spreadRadius: 1,
-                        offset: const Offset(0, 8),
+                final glow = 0.30 + (_smoothPulse.value * 0.20);
+                final scale = 1.0 + (_smoothPulse.value * 0.015); // Subtle 1.5% breathing scale
+                
+                return Transform.scale(
+                  scale: scale,
+                  child: Container(
+                    height: 60,
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(20),
+                      gradient: const LinearGradient(
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                        colors: [AppColors.primaryBlue, Color(0xFF123E91)],
                       ),
-                    ],
+                      boxShadow: [
+                        BoxShadow(
+                          color: AppColors.primaryBlue.withValues(alpha: glow),
+                          blurRadius: 22,
+                          spreadRadius: 1,
+                          offset: const Offset(0, 8),
+                        ),
+                      ],
+                    ),
+                    child: child,
                   ),
-                  child: child,
                 );
               },
               child: Row(
@@ -183,8 +180,8 @@ class _SynchroAiChatSheetState extends ConsumerState<_SynchroAiChatSheet> {
       if (_scrollController.hasClients) {
         _scrollController.animateTo(
           _scrollController.position.maxScrollExtent,
-          duration: const Duration(milliseconds: 200),
-          curve: Curves.easeOut,
+          duration: const Duration(milliseconds: 300), // Smoothed out scroll animation
+          curve: Curves.easeOutQuart, // Nicer easing curve for the scroll
         );
       }
     });
@@ -268,12 +265,31 @@ class _SynchroAiChatSheetState extends ConsumerState<_SynchroAiChatSheet> {
                 borderRadius: BorderRadius.circular(2),
               ),
             ),
-            const SizedBox(height: 12),
-            const Text(
-              'Synchro AI',
-              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+            const SizedBox(height: 4),
+            
+            // --- NEW: Header with centered text and the trash icon ---
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 8.0),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const SizedBox(width: 48), // Spacer to perfectly center the title
+                  const Text(
+                    'Synchro AI',
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+                  ),
+                  IconButton(
+                    icon: const Icon(LucideIcons.trash, size: 18, color: AppColors.textSecondary),
+                    onPressed: () {
+                      ref.read(synchroAiControllerProvider.notifier).clearHistory();
+                    },
+                    tooltip: 'Clear Chat',
+                  ),
+                ],
+              ),
             ),
-            const SizedBox(height: 8),
+            // ---------------------------------------------------------
+            
             Expanded(
               child: aiState.history.isEmpty
                   ? Center(child: SingleChildScrollView(child: _buildSuggestions()))

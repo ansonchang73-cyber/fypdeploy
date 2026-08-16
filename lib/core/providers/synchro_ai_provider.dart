@@ -90,6 +90,15 @@ class SynchroAiController extends Notifier<SynchroAiState> {
   void clearPendingAction() {
     state = state.copyWith(clearPendingAction: true);
   }
+  /// Wipes the chat history and resets the top bar greeting
+  void clearHistory() {
+    state = state.copyWith(
+      history: const [],
+      lastReply: "Hi, I'm Synchro AI. Ask me anything or set a reminder.",
+      clearError: true,
+      clearPendingAction: true,
+    );
+  }
 }
 
 final synchroAiControllerProvider =
