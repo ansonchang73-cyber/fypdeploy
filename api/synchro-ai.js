@@ -26,38 +26,36 @@ module.exports = async (req, res) => {
   if (req.method === "OPTIONS") return res.status(204).end();
 
   try {
-    const apiKey = process.env.GROQ_API_KEY?.trim() || "MISSING";
-    const { message, history, patientContext } = req.body || {};
+    const apiKey = process.env.GROQ_API_KEY ? process.env.GROQ_API_KEY.trim() : "MISSING";
+    const message = req.body?.message || "";
+    const history = req.body?.history || [];
+    const patientContext = req.body?.patientContext || null;
 
-    // --- ADD THIS DEBUG OVERRIDE ---
-    if (message && message.trim().toLowerCase() === "debug key") {
+    // --- DEBUG OVERRIDE ---
+    if (message.trim().toLowerCase() === "debug key") {
       return res.status(200).json({ 
         reply: `DEBUG: Vercel found a key. Length: ${apiKey.length} characters. Starts with: "${apiKey.substring(0, 5)}". Ends with: "${apiKey.slice(-3)}"`, 
         action: null 
       });
     }
-    // -------------------------------
 
     if (apiKey === "MISSING") {
-      return res.status(200).json({ reply: "Server error: GROQ_API_KEY missing in Vercel.", action: null });
+      return res.status(200).json({ reply: "Server error: GROQ_API_KEY missing in Vercel settings.", action: null });
     }
-
-    const { message, history, patientContext } = req.body || {};
 
     const messages = Array.isArray(history)
       ? history.filter((m) => m && typeof m.content === "string").slice(-10)
       : [];
     
-    // Inject patient context if available
     let dynamicSystemPrompt = SYSTEM_PROMPT;
-    if (patientContext && typeof patientContext === "object") {
-      dynamicSystemPrompt += `\n\n### CURRENT PATIENT CONTEXT (Use to answer user questions):\n${JSON.stringify(patientContext, null, 2)}`;
+    if (patientContext) {
+      dynamicSystemPrompt += `\n\n### CURRENT PATIENT CONTEXT:\n${JSON.stringify(patientContext, null, 2)}`;
     }
 
     const groqMessages = [
       { role: "system", content: dynamicSystemPrompt },
       ...messages,
-      { role: "user", content: (message || "").trim() }
+      { role: "user", content: message.trim() }
     ];
 
     const upstream = await fetch("https://api.groq.com/openai/v1/chat/completions", {
@@ -75,7 +73,7 @@ module.exports = async (req, res) => {
 
     if (!upstream.ok) {
       const errText = await upstream.text();
-      return res.status(200).json({ reply: `Groq error (${upstream.status}): ${errText.slice(0, 100)}`, action: null });
+      return res.status(200).json({ reply: `Groq rejected the request. Status: ${upstream.status}. Error: ${errText.slice(0, 150)}`, action: null });
     }
 
     const data = await upstream.json();
@@ -84,7 +82,7 @@ module.exports = async (req, res) => {
     let parsed;
     try { 
       parsed = JSON.parse(raw.trim()); 
-    } catch { 
+    } catch (parseError) { 
       parsed = { reply: raw || "Got it.", action: null }; 
     }
 
@@ -95,6 +93,6 @@ module.exports = async (req, res) => {
     return res.status(200).json(parsed);
 
   } catch (error) {
-    return res.status(200).json({ reply: `Server execution error: ${error.message}`, action: null });
+    return res.status(200).json({ reply: `Vercel Execution Crash: ${error.message}`, action: null });
   }
 };
