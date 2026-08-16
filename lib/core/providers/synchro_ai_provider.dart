@@ -12,7 +12,40 @@ final synchroAiServiceProvider = Provider<SynchroAiService>((ref) {
   );
 });
 
-// ... [Keep your SynchroAiState class exactly as it is] ...
+class SynchroAiState {
+  final List<SynchroChatTurn> history;
+  final String lastReply;
+  final bool isLoading;
+  final SynchroReminderAction? pendingAction;
+  final String? error;
+
+  const SynchroAiState({
+    this.history = const [],
+    this.lastReply = "Hi, I'm Synchro AI. Ask me anything or set a reminder.",
+    this.isLoading = false,
+    this.pendingAction,
+    this.error,
+  });
+
+  SynchroAiState copyWith({
+    List<SynchroChatTurn>? history,
+    String? lastReply,
+    bool? isLoading,
+    SynchroReminderAction? pendingAction,
+    bool clearPendingAction = false,
+    String? error,
+    bool clearError = false,
+  }) {
+    return SynchroAiState(
+      history: history ?? this.history,
+      lastReply: lastReply ?? this.lastReply,
+      isLoading: isLoading ?? this.isLoading,
+      pendingAction:
+          clearPendingAction ? null : (pendingAction ?? this.pendingAction),
+      error: clearError ? null : (error ?? this.error),
+    );
+  }
+}
 
 class SynchroAiController extends Notifier<SynchroAiState> {
   @override
