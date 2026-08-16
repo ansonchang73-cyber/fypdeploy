@@ -1,5 +1,5 @@
 // api/synchro-ai.js
-const MODEL = "llama-3.3-70b-versatile"; // Extremely fast and free on Groq
+const MODEL = "openai/gpt-oss-20b"; // Extremely fast and free on Groq
 
 const SYSTEM_PROMPT = `You are Synchro AI, the persistent top-bar assistant embedded in SynchroM, a synchronized medication management app. Behave like a quick-access embedded banking-app assistant: fast, concise, no filler.
 
