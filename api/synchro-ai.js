@@ -9,7 +9,6 @@ Your goals:
 
 Rules:
 - Never give medical advice: no dosing changes, clinical recommendations, or drug interactions. Advise them to consult their doctor or caregiver.
-- Reference their actual schedule, adherence, or medications when available in the context.
 - Keep "reply" under 25 words.
 - Always output a single JSON object in one of two formats:
 
@@ -26,22 +25,17 @@ module.exports = async (req, res) => {
   if (req.method === "OPTIONS") return res.status(204).end();
 
   try {
-    const apiKey = process.env.GROQ_API_KEY ? process.env.GROQ_API_KEY.trim() : "MISSING";
+    // 1. THE NUCLEAR CLEANER: Destroy all invisible spaces, quotes, and artifacts.
+    let rawKey = process.env.GROQ_API_KEY || "";
+    const apiKey = rawKey.replace(/[^a-zA-Z0-9_]/g, "");
+
+    if (!apiKey || apiKey.length < 50) {
+      return res.status(200).json({ reply: "Server error: API key missing or destroyed during cleaning.", action: null });
+    }
+
     const message = req.body?.message || "";
     const history = req.body?.history || [];
     const patientContext = req.body?.patientContext || null;
-
-    // --- DEBUG OVERRIDE ---
-    if (message.trim().toLowerCase() === "debug key") {
-      return res.status(200).json({ 
-        reply: `DEBUG: Vercel found a key. Length: ${apiKey.length} characters. Starts with: "${apiKey.substring(0, 5)}". Ends with: "${apiKey.slice(-3)}"`, 
-        action: null 
-      });
-    }
-
-    if (apiKey === "MISSING") {
-      return res.status(200).json({ reply: "Server error: GROQ_API_KEY missing in Vercel settings.", action: null });
-    }
 
     const messages = Array.isArray(history)
       ? history.filter((m) => m && typeof m.content === "string").slice(-10)
@@ -71,9 +65,13 @@ module.exports = async (req, res) => {
       })
     });
 
+    // 2. THE ULTIMATE DEBUGGER: If it STILL fails, echo the exact length and headers Vercel used
     if (!upstream.ok) {
       const errText = await upstream.text();
-      return res.status(200).json({ reply: `Groq rejected the request. Status: ${upstream.status}. Error: ${errText.slice(0, 150)}`, action: null });
+      return res.status(200).json({ 
+        reply: `Vercel Auth Length: ${apiKey.length}. Error: ${errText.slice(0, 150)}`, 
+        action: null 
+      });
     }
 
     const data = await upstream.json();
@@ -93,6 +91,6 @@ module.exports = async (req, res) => {
     return res.status(200).json(parsed);
 
   } catch (error) {
-    return res.status(200).json({ reply: `Vercel Execution Crash: ${error.message}`, action: null });
+    return res.status(200).json({ reply: `Vercel Crash: ${error.message}`, action: null });
   }
 };
