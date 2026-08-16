@@ -3,8 +3,9 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../services/synchro_ai_service.dart';
-import '../../features/medication_management/providers/timeline_provider.dart'; // <--- Added import
-import '../../features/medication_management/domain/entities/medication_task.dart'; // <--- Added import
+
+// FIX: Corrected path to include the presentation folder!
+import '../../features/medication_management/presentation/providers/timeline_provider.dart';
 
 final synchroAiServiceProvider = Provider<SynchroAiService>((ref) {
   return SynchroAiService(
@@ -56,7 +57,7 @@ class SynchroAiController extends Notifier<SynchroAiState> {
     if (trimmed.isEmpty || state.isLoading) return;
 
     final service = ref.read(synchroAiServiceProvider);
-    final List<SynchroChatTurn> historyForRequest = state.history;
+    final List<SynchroChatTurn> historyForRequest = state.history.toList();
 
     state = state.copyWith(
       isLoading: true,
@@ -68,20 +69,21 @@ class SynchroAiController extends Notifier<SynchroAiState> {
     try {
       final user = FirebaseAuth.instance.currentUser;
       
-      // 1. Read the REAL schedule data from your existing timelineProvider
+      // 1. Read the REAL schedule data
       final scheduleAsync = ref.read(timelineProvider);
       
       // 2. Format the real data into a simple list the AI can read
       List<Map<String, String>> formattedSchedule = [];
       
       if (scheduleAsync.hasValue && scheduleAsync.value != null) {
-        final List<MedicationTask> rawSchedule = List<MedicationTask>.from(scheduleAsync.value!);
+        // Using dynamic to avoid path errors with MedicationTask
+        final rawSchedule = List<dynamic>.from(scheduleAsync.value!);
         
-        for (var task in rawSchedule) {
+        for (dynamic task in rawSchedule) {
           formattedSchedule.add({
-            'medication': task.name,
-            'time': task.time,
-            'frequency': task.frequency,
+            'medication': task.name.toString(),
+            'time': task.time.toString(),
+            'frequency': task.frequency.toString(),
           });
         }
       }
