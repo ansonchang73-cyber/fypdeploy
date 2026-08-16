@@ -18,7 +18,7 @@ class SynchroAiTopBar extends ConsumerStatefulWidget implements PreferredSizeWid
 class _SynchroAiTopBarState extends ConsumerState<SynchroAiTopBar>
     with SingleTickerProviderStateMixin {
   late final AnimationController _pulseController;
-  late final Animation<double> _smoothPulse; // Added for smoother easing
+  late final Animation<double> _smoothPulse;
 
   @override
   void initState() {
@@ -28,7 +28,6 @@ class _SynchroAiTopBarState extends ConsumerState<SynchroAiTopBar>
       duration: const Duration(seconds: 2),
     )..repeat(reverse: true);
     
-    // Applies an ease-in-out curve so the animation doesn't sharply reverse direction
     _smoothPulse = CurvedAnimation(
       parent: _pulseController,
       curve: Curves.easeInOut,
@@ -70,10 +69,10 @@ class _SynchroAiTopBarState extends ConsumerState<SynchroAiTopBar>
           child: GestureDetector(
             onTap: () => _openChatSheet(context),
             child: AnimatedBuilder(
-              animation: _smoothPulse, // Using the smoothed curve
+              animation: _smoothPulse,
               builder: (context, child) {
                 final glow = 0.30 + (_smoothPulse.value * 0.20);
-                final scale = 1.0 + (_smoothPulse.value * 0.015); // Subtle 1.5% breathing scale
+                final scale = 1.0 + (_smoothPulse.value * 0.015);
                 
                 return Transform.scale(
                   scale: scale,
@@ -180,8 +179,8 @@ class _SynchroAiChatSheetState extends ConsumerState<_SynchroAiChatSheet> {
       if (_scrollController.hasClients) {
         _scrollController.animateTo(
           _scrollController.position.maxScrollExtent,
-          duration: const Duration(milliseconds: 300), // Smoothed out scroll animation
-          curve: Curves.easeOutQuart, // Nicer easing curve for the scroll
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeOutQuart,
         );
       }
     });
@@ -267,13 +266,12 @@ class _SynchroAiChatSheetState extends ConsumerState<_SynchroAiChatSheet> {
             ),
             const SizedBox(height: 4),
             
-            // --- NEW: Header with centered text and the trash icon ---
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 8.0),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  const SizedBox(width: 48), // Spacer to perfectly center the title
+                  const SizedBox(width: 48),
                   const Text(
                     'Synchro AI',
                     style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
@@ -288,7 +286,6 @@ class _SynchroAiChatSheetState extends ConsumerState<_SynchroAiChatSheet> {
                 ],
               ),
             ),
-            // ---------------------------------------------------------
             
             Expanded(
               child: aiState.history.isEmpty
