@@ -30,7 +30,7 @@ module.exports = async (req, res) => {
 
   // 2. Wrap EVERYTHING in a massive try-catch so it can NEVER 502 again
   try {
-    const apiKey = process.env.GROQ_API_KEY;
+    const apiKey = process.env.GROQ_API_KEY?.trim();
     if (!apiKey) {
       return res.status(200).json({ reply: "Diagnostic Error: GROQ_API_KEY is missing in Vercel settings.", action: null });
     }
