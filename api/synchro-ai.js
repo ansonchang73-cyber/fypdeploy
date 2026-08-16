@@ -65,11 +65,11 @@ module.exports = async (req, res) => {
       })
     });
 
-    // 2. THE ULTIMATE DEBUGGER: If it STILL fails, echo the exact length and headers Vercel used
+    // 2. THE ULTIMATE DEBUGGER: Reveal the exact key Vercel is attempting to use
     if (!upstream.ok) {
       const errText = await upstream.text();
       return res.status(200).json({ 
-        reply: `Vercel Auth Length: ${apiKey.length}. Error: ${errText.slice(0, 150)}`, 
+        reply: `Failed Key: ${apiKey.substring(0, 4)}...${apiKey.slice(-4)}. Error: ${errText.slice(0, 100)}`, 
         action: null 
       });
     }
