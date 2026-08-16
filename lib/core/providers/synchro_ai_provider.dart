@@ -87,11 +87,18 @@ class SynchroAiController extends Notifier<SynchroAiState> {
           });
         }
       }
-
+      
+      // --- ADD THIS TO GET THE LOCAL TIME ---
+      final now = DateTime.now();
+      final amPm = now.hour >= 12 ? 'PM' : 'AM';
+      final hour12 = now.hour > 12 ? now.hour - 12 : (now.hour == 0 ? 12 : now.hour);
+      final String localTime = '$hour12:${now.minute.toString().padLeft(2, '0')} $amPm';
+      // --------------------------------------
       // 3. Package it into the payload
       final Map<String, dynamic> patientContext = {
         'userId': user?.uid ?? 'guest',
         'displayName': user?.displayName ?? 'Patient',
+        'currentTime': localTime, // <--- ADD THIS LINE
         'todaySchedule': formattedSchedule.isNotEmpty ? formattedSchedule : 'No medications scheduled today.',
       };
 
