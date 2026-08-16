@@ -53,25 +53,34 @@ class SynchroAiController extends Notifier<SynchroAiState> {
   SynchroAiState build() => const SynchroAiState();
 
   Future<void> send(String message) async {
-    if (message.trim().isEmpty || state.isLoading) return;
+    final trimmed = message.trim();
+    if (trimmed.isEmpty || state.isLoading) return;
 
     final service = ref.read(synchroAiServiceProvider);
+
+    // Captured *before* the optimistic update just below — the request
+    // should still only carry the turns that came before this message,
+    // since `service.send` appends `trimmed` itself. Reading
+    // `state.history` after the update would double it up in the prompt
+    // sent to the model.
+    final List<SynchroChatTurn> historyForRequest = state.history;
+
+    // Show the user's own message immediately instead of waiting for the
+    // round trip to finish — this is what lets the chat sheet's bubble
+    // animation and the top bar's "Thinking" indicator actually feel
+    // responsive rather than everything popping in at once at the end.
     state = state.copyWith(
       isLoading: true,
       clearError: true,
       clearPendingAction: true,
+      history: [...state.history, SynchroChatTurn('user', trimmed)],
     );
 
     try {
-      final response =
-          await service.send(message.trim(), history: state.history);
+      final response = await service.send(trimmed, history: historyForRequest);
 
       state = state.copyWith(
-        history: [
-          ...state.history,
-          SynchroChatTurn('user', message.trim()),
-          SynchroChatTurn('assistant', response.reply),
-        ],
+        history: [...state.history, SynchroChatTurn('assistant', response.reply)],
         lastReply: response.reply,
         isLoading: false,
         pendingAction: response.action,
