@@ -26,14 +26,20 @@ module.exports = async (req, res) => {
   if (req.method === "OPTIONS") return res.status(204).end();
 
   try {
-    const apiKey = process.env.GROQ_API_KEY?.trim();
-    if (!apiKey) {
-      return res.status(200).json({ reply: "Server error: GROQ_API_KEY missing.", action: null });
-    }
+    const apiKey = process.env.GROQ_API_KEY?.trim() || "MISSING";
+    const { message, history, patientContext } = req.body || {};
 
-    // --- ADD THESE 3 LINES ---
-    if (!apiKey.startsWith("gsk_")) {
-       return res.status(200).json({ reply: `API Key Error: Vercel thinks your key is "${apiKey.substring(0, 5)}...". Groq keys MUST start with "gsk_". Fix it in Vercel Settings!`, action: null });
+    // --- ADD THIS DEBUG OVERRIDE ---
+    if (message && message.trim().toLowerCase() === "debug key") {
+      return res.status(200).json({ 
+        reply: `DEBUG: Vercel found a key. Length: ${apiKey.length} characters. Starts with: "${apiKey.substring(0, 5)}". Ends with: "${apiKey.slice(-3)}"`, 
+        action: null 
+      });
+    }
+    // -------------------------------
+
+    if (apiKey === "MISSING") {
+      return res.status(200).json({ reply: "Server error: GROQ_API_KEY missing in Vercel.", action: null });
     }
 
     const { message, history, patientContext } = req.body || {};
