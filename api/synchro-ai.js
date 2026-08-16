@@ -31,6 +31,11 @@ module.exports = async (req, res) => {
       return res.status(200).json({ reply: "Server error: GROQ_API_KEY missing.", action: null });
     }
 
+    // --- ADD THESE 3 LINES ---
+    if (!apiKey.startsWith("gsk_")) {
+       return res.status(200).json({ reply: `API Key Error: Vercel thinks your key is "${apiKey.substring(0, 5)}...". Groq keys MUST start with "gsk_". Fix it in Vercel Settings!`, action: null });
+    }
+
     const { message, history, patientContext } = req.body || {};
 
     const messages = Array.isArray(history)
