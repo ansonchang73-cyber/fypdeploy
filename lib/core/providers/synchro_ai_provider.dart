@@ -1,52 +1,18 @@
 // lib/core/providers/synchro_ai_provider.dart
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../services/synchro_ai_service.dart';
 
-/// Points at the deployed API. `Uri.base.origin` resolves to whatever
-/// domain the Flutter web app is actually running on, so this works
-/// unchanged on your Vercel preview and production URLs.
+// If you have providers for medications or adherence, import them here.
+
 final synchroAiServiceProvider = Provider<SynchroAiService>((ref) {
   return SynchroAiService(
     baseUrl: 'https://synchrom.vercel.app',
-    // sharedToken: 'put-the-same-value-as-SYNCHRO_AI_SHARED_SECRET-here',
   );
 });
 
-class SynchroAiState {
-  final List<SynchroChatTurn> history;
-  final String lastReply;
-  final bool isLoading;
-  final SynchroReminderAction? pendingAction;
-  final String? error;
-
-  const SynchroAiState({
-    this.history = const [],
-    this.lastReply = "Hi, I'm Synchro AI. Ask me anything or set a reminder.",
-    this.isLoading = false,
-    this.pendingAction,
-    this.error,
-  });
-
-  SynchroAiState copyWith({
-    List<SynchroChatTurn>? history,
-    String? lastReply,
-    bool? isLoading,
-    SynchroReminderAction? pendingAction,
-    bool clearPendingAction = false,
-    String? error,
-    bool clearError = false,
-  }) {
-    return SynchroAiState(
-      history: history ?? this.history,
-      lastReply: lastReply ?? this.lastReply,
-      isLoading: isLoading ?? this.isLoading,
-      pendingAction:
-          clearPendingAction ? null : (pendingAction ?? this.pendingAction),
-      error: clearError ? null : (error ?? this.error),
-    );
-  }
-}
+// ... Keep SynchroAiState as it is ...
 
 class SynchroAiController extends Notifier<SynchroAiState> {
   @override
@@ -57,18 +23,8 @@ class SynchroAiController extends Notifier<SynchroAiState> {
     if (trimmed.isEmpty || state.isLoading) return;
 
     final service = ref.read(synchroAiServiceProvider);
-
-    // Captured *before* the optimistic update just below — the request
-    // should still only carry the turns that came before this message,
-    // since `service.send` appends `trimmed` itself. Reading
-    // `state.history` after the update would double it up in the prompt
-    // sent to the model.
     final List<SynchroChatTurn> historyForRequest = state.history;
 
-    // Show the user's own message immediately instead of waiting for the
-    // round trip to finish — this is what lets the chat sheet's bubble
-    // animation and the top bar's "Thinking" indicator actually feel
-    // responsive rather than everything popping in at once at the end.
     state = state.copyWith(
       isLoading: true,
       clearError: true,
@@ -77,7 +33,25 @@ class SynchroAiController extends Notifier<SynchroAiState> {
     );
 
     try {
-      final response = await service.send(trimmed, history: historyForRequest);
+      final user = FirebaseAuth.instance.currentUser;
+
+      // Build context payload from Firebase / current state
+      final Map<String, dynamic> patientContext = {
+        'userId': user?.uid ?? 'guest',
+        'displayName': user?.displayName ?? 'Patient',
+        // Example: Add live data from your existing Riverpod providers / Firestore
+        'todaySchedule': [
+          {'medication': 'Metformin', 'dose': '500mg', 'time': '08:00 AM', 'status': 'taken'},
+          {'medication': 'Lisinopril', 'dose': '10mg', 'time': '08:00 PM', 'status': 'pending'},
+        ],
+        'weeklyAdherenceRate': '92%',
+      };
+
+      final response = await service.send(
+        trimmed,
+        history: historyForRequest,
+        patientContext: patientContext,
+      );
 
       state = state.copyWith(
         history: [...state.history, SynchroChatTurn('assistant', response.reply)],
@@ -94,12 +68,10 @@ class SynchroAiController extends Notifier<SynchroAiState> {
     }
   }
 
-  /// Call after you've acted on state.pendingAction (e.g. shown the
-  /// confirmation) so it doesn't fire again on the next rebuild.
   void clearPendingAction() {
     state = state.copyWith(clearPendingAction: true);
   }
-  /// Wipes the chat history and resets the top bar greeting
+
   void clearHistory() {
     state = state.copyWith(
       history: const [],
