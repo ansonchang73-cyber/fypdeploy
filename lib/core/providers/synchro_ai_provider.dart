@@ -4,7 +4,6 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../services/synchro_ai_service.dart';
 
-// FIX: Corrected path to include the presentation folder!
 import '../../features/medication_management/presentation/providers/timeline_provider.dart';
 
 final synchroAiServiceProvider = Provider<SynchroAiService>((ref) {
@@ -72,23 +71,7 @@ class SynchroAiController extends Notifier<SynchroAiState> {
       // 1. Read the REAL schedule data
       final scheduleAsync = ref.read(timelineProvider);
       
-      // 2. Format the real data into a simple list the AI can read
-      List<Map<String, String>> formattedSchedule = [];
-      
-      if (scheduleAsync.hasValue && scheduleAsync.value != null) {
-        // Using dynamic to avoid path errors with MedicationTask
-        final rawSchedule = List<dynamic>.from(scheduleAsync.value!);
-        
-        for (dynamic task in rawSchedule) {
-          formattedSchedule.add({
-            'medication': task.name.toString(),
-            'time': task.time.toString(),
-            'frequency': task.frequency.toString(),
-          });
-        }
-      }
-      
-     // 2. Format the real data into an idiot-proof list for the AI
+      // 2. Format the real data into an idiot-proof list for the AI
       List<Map<String, String>> formattedSchedule = [];
       
       if (scheduleAsync.hasValue && scheduleAsync.value != null) {
