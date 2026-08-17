@@ -71,37 +71,69 @@ class SynchroAiController extends Notifier<SynchroAiState> {
       // 1. Read the REAL schedule data
       final scheduleAsync = ref.read(timelineProvider);
       
-      // 2. Format the real data into an idiot-proof list for the AI
-      List<Map<String, String>> formattedSchedule = [];
+      // 2. Do the math in Flutter so the AI doesn't have to!
+      List<Map<String, dynamic>> formattedSchedule = [];
+      final now = DateTime.now();
+      final currentMinutes = (now.hour * 60) + now.minute;
       
       if (scheduleAsync.hasValue && scheduleAsync.value != null) {
         final rawSchedule = List<dynamic>.from(scheduleAsync.value!);
         
         for (dynamic task in rawSchedule) {
+          String timeString = task.time.toString();
+          
+          // Convert string to minutes since midnight for perfect sorting
+          int taskMinutes = 9999;
+          try {
+            String t = timeString.toLowerCase();
+            bool isPm = t.contains('pm');
+            bool isAm = t.contains('am');
+            t = t.replaceAll(RegExp(r'[^0-9:]'), '');
+            List<String> parts = t.split(':');
+            if (parts.isNotEmpty) {
+              int h = int.parse(parts[0]);
+              int m = parts.length > 1 ? int.parse(parts[1]) : 0;
+              if (isPm && h < 12) h += 12;
+              if (isAm && h == 12) h = 0;
+              taskMinutes = (h * 60) + m;
+            }
+          } catch (_) {}
+
           formattedSchedule.add({
             'PILL_NAME': task.name.toString(),
-            'SCHEDULED_TIME': task.time.toString(),
+            'SCHEDULED_TIME': timeString,
+            'SORT_MINUTES': taskMinutes,
           });
+        }
+        
+        // Sort the list chronologically
+        formattedSchedule.sort((a, b) => (a['SORT_MINUTES'] as int).compareTo(b['SORT_MINUTES'] as int));
+        
+        // Tag the EXACT next medication so the AI can't possibly mess up
+        bool foundNext = false;
+        for (var item in formattedSchedule) {
+          int tMin = item['SORT_MINUTES'] as int;
+          item.remove('SORT_MINUTES'); // Hide the math from the AI
+          
+          if (tMin < currentMinutes) {
+            item['STATUS'] = 'ALREADY PASSED';
+          } else if (!foundNext && tMin != 9999) {
+            item['STATUS'] = '*** NEXT UP ***'; // The secret cheat code
+            foundNext = true;
+          } else {
+            item['STATUS'] = 'LATER TODAY';
+          }
         }
       }
 
-      final now = DateTime.now();
-      final String time24 = '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}';
-      final amPm = now.hour >= 12 ? 'PM' : 'AM';
-      final hour12 = now.hour > 12 ? now.hour - 12 : (now.hour == 0 ? 12 : now.hour);
-      final String time12 = '$hour12:${now.minute.toString().padLeft(2, '0')} $amPm';
+      final String time12 = '${now.hour > 12 ? now.hour - 12 : (now.hour == 0 ? 12 : now.hour)}:${now.minute.toString().padLeft(2, '0')} ${now.hour >= 12 ? 'PM' : 'AM'}';
 
       // 3. Package it into the payload
       final Map<String, dynamic> patientContext = {
         'userId': user?.uid ?? 'guest',
         'CURRENT_TIME': time12,
         'todaySchedule': formattedSchedule.isNotEmpty ? formattedSchedule : 'No medications scheduled today.',
-        'STRICT_RULES': [
-          '1. NEVER invent or guess a time or medication.',
-          '2. You must ONLY output exact PILL_NAMEs and SCHEDULED_TIMEs that exist in the todaySchedule array.',
-          '3. Pill names are often numbers (e.g. "1250"). These are NOT times.',
-          '4. Look at the todaySchedule and find the time that chronologically follows $time12.'
-        ]
+        'SYSTEM_RULE': 'Look at the todaySchedule array. Just read the medication with STATUS: "*** NEXT UP ***". DO NOT DO ANY MATH.'
       };
 
       final response = await service.send(
