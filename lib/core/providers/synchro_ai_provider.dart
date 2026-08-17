@@ -88,18 +88,20 @@ class SynchroAiController extends Notifier<SynchroAiState> {
         }
       }
       
-      // --- ADD THIS TO GET THE LOCAL TIME ---
+     // --- THE TIME & MATH CHEAT CODE ---
       final now = DateTime.now();
       final amPm = now.hour >= 12 ? 'PM' : 'AM';
       final hour12 = now.hour > 12 ? now.hour - 12 : (now.hour == 0 ? 12 : now.hour);
       final String localTime = '$hour12:${now.minute.toString().padLeft(2, '0')} $amPm';
-      // --------------------------------------
+      final String militaryTime = '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}';
+
       // 3. Package it into the payload
       final Map<String, dynamic> patientContext = {
         'userId': user?.uid ?? 'guest',
         'displayName': user?.displayName ?? 'Patient',
-        'currentTime': localTime, // <--- ADD THIS LINE
+        'currentTime': '$localTime (24-hour time: $militaryTime)',
         'todaySchedule': formattedSchedule.isNotEmpty ? formattedSchedule : 'No medications scheduled today.',
+        'systemRule': 'When the user asks for their NEXT medication, strictly compare the todaySchedule times against the currentTime. Remember that 1:00 PM comes AFTER 12:00 PM. Use the 24-hour time to accurately find the time that comes immediately after $localTime.'
       };
 
       final response = await service.send(
