@@ -79,24 +79,25 @@ class SynchroAiController extends Notifier<SynchroAiState> {
         
         for (dynamic task in rawSchedule) {
           formattedSchedule.add({
-            'MEDICATION_NAME_NOT_A_TIME': task.name.toString(),
+            'PILL_NAME': task.name.toString(),
             'SCHEDULED_TIME': task.time.toString(),
-            'frequency': task.frequency.toString(),
           });
         }
       }
 
       final now = DateTime.now();
+      final String time24 = '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}';
       final amPm = now.hour >= 12 ? 'PM' : 'AM';
       final hour12 = now.hour > 12 ? now.hour - 12 : (now.hour == 0 ? 12 : now.hour);
-      final String localTime = '$hour12:${now.minute.toString().padLeft(2, '0')} $amPm';
+      final String time12 = '$hour12:${now.minute.toString().padLeft(2, '0')} $amPm';
 
       // 3. Package it into the payload
       final Map<String, dynamic> patientContext = {
         'userId': user?.uid ?? 'guest',
-        'displayName': user?.displayName ?? 'Patient',
-        'CURRENT_LOCAL_TIME': localTime,
-        'CRITICAL_SYSTEM_RULE': 'The medication names are numbers (like "1250" or "125"). DO NOT treat the medication names as times. To find the NEXT medication, strictly compare the CURRENT_LOCAL_TIME ($localTime) against the SCHEDULED_TIME field.',
+        'CURRENT_TIME': '$time12 (Military time: $time24)',
+        'AI_LOGIC_RULE_1': 'Medication names like "1250" or "125" are pill names. THEY ARE NEVER TIMES.',
+        'AI_LOGIC_RULE_2': 'DO NOT compare times alphabetically! You must compare them CHRONOLOGICALLY.',
+        'AI_LOGIC_RULE_3': 'To find the next medication, convert all SCHEDULED_TIME values to 24-hour military time mentally, then find the time that comes immediately after $time24. For example, 1:25 PM is 13:25. Because 13:25 comes after 12:56, it is the NEXT medication.',
         'todaySchedule': formattedSchedule.isNotEmpty ? formattedSchedule : 'No medications scheduled today.',
       };
 
