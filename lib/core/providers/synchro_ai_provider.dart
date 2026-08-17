@@ -88,20 +88,33 @@ class SynchroAiController extends Notifier<SynchroAiState> {
         }
       }
       
-     // --- THE TIME & MATH CHEAT CODE ---
+     // 2. Format the real data into an idiot-proof list for the AI
+      List<Map<String, String>> formattedSchedule = [];
+      
+      if (scheduleAsync.hasValue && scheduleAsync.value != null) {
+        final rawSchedule = List<dynamic>.from(scheduleAsync.value!);
+        
+        for (dynamic task in rawSchedule) {
+          formattedSchedule.add({
+            'MEDICATION_NAME_NOT_A_TIME': task.name.toString(),
+            'SCHEDULED_TIME': task.time.toString(),
+            'frequency': task.frequency.toString(),
+          });
+        }
+      }
+
       final now = DateTime.now();
       final amPm = now.hour >= 12 ? 'PM' : 'AM';
       final hour12 = now.hour > 12 ? now.hour - 12 : (now.hour == 0 ? 12 : now.hour);
       final String localTime = '$hour12:${now.minute.toString().padLeft(2, '0')} $amPm';
-      final String militaryTime = '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}';
 
       // 3. Package it into the payload
       final Map<String, dynamic> patientContext = {
         'userId': user?.uid ?? 'guest',
         'displayName': user?.displayName ?? 'Patient',
-        'currentTime': '$localTime (24-hour time: $militaryTime)',
+        'CURRENT_LOCAL_TIME': localTime,
+        'CRITICAL_SYSTEM_RULE': 'The medication names are numbers (like "1250" or "125"). DO NOT treat the medication names as times. To find the NEXT medication, strictly compare the CURRENT_LOCAL_TIME ($localTime) against the SCHEDULED_TIME field.',
         'todaySchedule': formattedSchedule.isNotEmpty ? formattedSchedule : 'No medications scheduled today.',
-        'systemRule': 'When the user asks for their NEXT medication, strictly compare the todaySchedule times against the currentTime. Remember that 1:00 PM comes AFTER 12:00 PM. Use the 24-hour time to accurately find the time that comes immediately after $localTime.'
       };
 
       final response = await service.send(
