@@ -94,11 +94,14 @@ class SynchroAiController extends Notifier<SynchroAiState> {
       // 3. Package it into the payload
       final Map<String, dynamic> patientContext = {
         'userId': user?.uid ?? 'guest',
-        'CURRENT_TIME': '$time12 (Military time: $time24)',
-        'AI_LOGIC_RULE_1': 'Medication names like "1250" or "125" are pill names. THEY ARE NEVER TIMES.',
-        'AI_LOGIC_RULE_2': 'DO NOT compare times alphabetically! You must compare them CHRONOLOGICALLY.',
-        'AI_LOGIC_RULE_3': 'To find the next medication, convert all SCHEDULED_TIME values to 24-hour military time mentally, then find the time that comes immediately after $time24. For example, 1:25 PM is 13:25. Because 13:25 comes after 12:56, it is the NEXT medication.',
+        'CURRENT_TIME': time12,
         'todaySchedule': formattedSchedule.isNotEmpty ? formattedSchedule : 'No medications scheduled today.',
+        'STRICT_RULES': [
+          '1. NEVER invent or guess a time or medication.',
+          '2. You must ONLY output exact PILL_NAMEs and SCHEDULED_TIMEs that exist in the todaySchedule array.',
+          '3. Pill names are often numbers (e.g. "1250"). These are NOT times.',
+          '4. Look at the todaySchedule and find the time that chronologically follows $time12.'
+        ]
       };
 
       final response = await service.send(
